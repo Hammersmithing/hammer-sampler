@@ -6,18 +6,20 @@ MidiKeyboardProcessor::MidiKeyboardProcessor()
         .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
     noteVelocities.fill(0);
+    noteVelocityLayerIdx.fill(-1);
     noteRoundRobin.fill(0);
     noteSustained.fill(false);
-    for (auto& arr : noteTiersActivated) arr.fill(false);
+    for (auto& arr : noteLayersActivated) arr.fill(false);
     for (auto& arr : noteRRActivated) arr.fill(false);
 }
 
 void MidiKeyboardProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     noteVelocities.fill(0);
+    noteVelocityLayerIdx.fill(-1);
     noteRoundRobin.fill(0);
     noteSustained.fill(false);
-    for (auto& arr : noteTiersActivated) arr.fill(false);
+    for (auto& arr : noteLayersActivated) arr.fill(false);
     for (auto& arr : noteRRActivated) arr.fill(false);
     currentRoundRobin = 1;
     sustainPedalDown = false;
@@ -56,11 +58,12 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
                     if (noteSustained[i])
                     {
                         noteVelocities[i] = 0;
+                        noteVelocityLayerIdx[i] = -1;
                         noteRoundRobin[i] = 0;
                         noteSustained[i] = false;
                         samplerEngine.noteOff(static_cast<int>(i));
                     }
-                    noteTiersActivated[i].fill(false);
+                    noteLayersActivated[i].fill(false);
                     noteRRActivated[i].fill(false);
                 }
             }
@@ -78,11 +81,14 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
             noteVelocities[noteIndex] = velocity;
             noteRoundRobin[noteIndex] = currentRoundRobin;
 
-            // Mark per-note velocity tier and RR as activated if pedal is down
-            if (sustainPedalDown)
+            // Get the velocity layer index for this note/velocity combo
+            int layerIdx = samplerEngine.getVelocityLayerIndex(midiNote, velocity);
+            noteVelocityLayerIdx[noteIndex] = layerIdx;
+
+            // Mark per-note velocity layer and RR as activated if pedal is down
+            if (sustainPedalDown && layerIdx >= 0 && layerIdx < maxVelocityLayers)
             {
-                int tier = (velocity <= 42) ? 1 : (velocity <= 84) ? 2 : 3;
-                noteTiersActivated[noteIndex][static_cast<size_t>(tier)] = true;
+                noteLayersActivated[noteIndex][static_cast<size_t>(layerIdx)] = true;
                 noteRRActivated[noteIndex][static_cast<size_t>(currentRoundRobin)] = true;
             }
 
@@ -103,6 +109,7 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
             {
                 // No pedal - release immediately
                 noteVelocities[noteIndex] = 0;
+                noteVelocityLayerIdx[noteIndex] = -1;
                 noteRoundRobin[noteIndex] = 0;
                 samplerEngine.noteOff(midiNote);
             }

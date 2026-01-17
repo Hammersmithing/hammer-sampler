@@ -58,6 +58,15 @@ public:
     void setADSR(float attack, float decay, float sustain, float release);
     ADSRParams getADSR() const { return adsrParams; }
 
+    // Query sample configuration for UI
+    bool isNoteAvailable(int midiNote) const;  // Has samples or valid fallback
+    bool noteHasOwnSamples(int midiNote) const;  // Has its own samples (not fallback)
+    std::vector<int> getVelocityLayers(int midiNote) const;  // Get velocity values for a note
+    int getLowestAvailableNote() const;
+    int getHighestAvailableNote() const;
+    int getMaxVelocityLayers(int startNote, int endNote) const;  // Max layers in range
+    int getVelocityLayerIndex(int midiNote, int velocity) const;  // Index of layer for velocity (0-based)
+
 private:
     // Parse note name to MIDI note number (e.g., "C4" -> 60, "G#6" -> 104)
     int parseNoteName(const juce::String& noteName) const;

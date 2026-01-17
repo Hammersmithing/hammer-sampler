@@ -30,6 +30,111 @@ void SamplerEngine::setADSR(float attack, float decay, float sustain, float rele
     adsrParams.release = juce::jmax(0.001f, release);
 }
 
+bool SamplerEngine::isNoteAvailable(int midiNote) const
+{
+    auto it = noteMappings.find(midiNote);
+    if (it == noteMappings.end())
+        return false;
+
+    const auto& mapping = it->second;
+    // Available if it has its own samples OR a valid fallback
+    return !mapping.velocityLayers.empty() || mapping.fallbackNote >= 0;
+}
+
+bool SamplerEngine::noteHasOwnSamples(int midiNote) const
+{
+    auto it = noteMappings.find(midiNote);
+    if (it == noteMappings.end())
+        return false;
+
+    return !it->second.velocityLayers.empty();
+}
+
+std::vector<int> SamplerEngine::getVelocityLayers(int midiNote) const
+{
+    std::vector<int> velocities;
+
+    auto it = noteMappings.find(midiNote);
+    if (it == noteMappings.end())
+        return velocities;
+
+    const auto& mapping = it->second;
+
+    // If this note uses a fallback, get velocities from the fallback note
+    int actualNote = (mapping.fallbackNote >= 0) ? mapping.fallbackNote : midiNote;
+
+    auto actualIt = noteMappings.find(actualNote);
+    if (actualIt == noteMappings.end())
+        return velocities;
+
+    for (const auto& layer : actualIt->second.velocityLayers)
+    {
+        velocities.push_back(layer.velocityValue);
+    }
+
+    return velocities;
+}
+
+int SamplerEngine::getLowestAvailableNote() const
+{
+    for (int note = 0; note < 128; ++note)
+    {
+        if (noteHasOwnSamples(note))
+            return note;
+    }
+    return -1;
+}
+
+int SamplerEngine::getHighestAvailableNote() const
+{
+    for (int note = 127; note >= 0; --note)
+    {
+        if (noteHasOwnSamples(note))
+            return note;
+    }
+    return -1;
+}
+
+int SamplerEngine::getMaxVelocityLayers(int startNote, int endNote) const
+{
+    int maxLayers = 0;
+    for (int note = startNote; note < endNote; ++note)
+    {
+        auto layers = getVelocityLayers(note);
+        if (static_cast<int>(layers.size()) > maxLayers)
+            maxLayers = static_cast<int>(layers.size());
+    }
+    return maxLayers;
+}
+
+int SamplerEngine::getVelocityLayerIndex(int midiNote, int velocity) const
+{
+    auto it = noteMappings.find(midiNote);
+    if (it == noteMappings.end())
+        return -1;
+
+    const auto& mapping = it->second;
+
+    // If this note uses a fallback, get layers from the fallback note
+    int actualNote = (mapping.fallbackNote >= 0) ? mapping.fallbackNote : midiNote;
+
+    auto actualIt = noteMappings.find(actualNote);
+    if (actualIt == noteMappings.end())
+        return -1;
+
+    const auto& actualMapping = actualIt->second;
+
+    // Find which velocity layer the velocity falls into
+    for (size_t i = 0; i < actualMapping.velocityLayers.size(); ++i)
+    {
+        const auto& layer = actualMapping.velocityLayers[i];
+        if (velocity >= layer.velocityRangeStart && velocity <= layer.velocityRangeEnd)
+            return static_cast<int>(i);
+    }
+
+    return -1;
+}
+
 int SamplerEngine::parseNoteName(const juce::String& noteName) const
 {
     if (noteName.isEmpty())

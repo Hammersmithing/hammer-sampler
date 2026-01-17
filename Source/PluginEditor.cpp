@@ -20,50 +20,68 @@ void NoteGridDisplay::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
     const float noteWidth = bounds.getWidth() / static_cast<float>(numNotes);
-    const float tierHeight = bounds.getHeight() / 3.0f;
     const float boxGap = 1.0f;
+
+    // Get the maximum number of velocity layers across all displayed notes
+    int maxLayers = processor.getMaxVelocityLayers(startNote, endNote);
+    if (maxLayers == 0)
+        maxLayers = 1;  // Avoid division by zero, show at least one row
+
+    const float layerHeight = bounds.getHeight() / static_cast<float>(maxLayers);
 
     for (int noteOffset = 0; noteOffset < numNotes; ++noteOffset)
     {
         int midiNote = startNote + noteOffset;
         float noteX = bounds.getX() + noteOffset * noteWidth;
 
+        // Get velocity layers for this note
+        auto velocityLayers = processor.getVelocityLayers(midiNote);
+        int numLayers = static_cast<int>(velocityLayers.size());
+
         // Get current state for this note
-        int currentTier = processor.getNoteVelocityTier(midiNote);
+        int currentLayerIdx = processor.getNoteVelocityLayerIndex(midiNote);
         int currentRR = processor.getNoteRoundRobin(midiNote);
+        bool noteAvailable = processor.isNoteAvailable(midiNote);
 
-        // Draw 3 velocity tier rows (top = high/3, middle = mid/2, bottom = low/1)
-        for (int tierIdx = 0; tierIdx < 3; ++tierIdx)
+        // Draw velocity layer rows (top = highest velocity, bottom = lowest)
+        for (int layerIdx = 0; layerIdx < maxLayers; ++layerIdx)
         {
-            int tier = 3 - tierIdx;  // top row = tier 3, bottom row = tier 1
-            float tierY = bounds.getY() + tierIdx * tierHeight;
+            // Reverse index so highest velocity is on top
+            int actualLayerIdx = numLayers - 1 - layerIdx;
+            float layerY = bounds.getY() + layerIdx * layerHeight;
 
-            // Check if this tier is active for this note
-            bool tierActive = (currentTier == tier) || processor.isNoteTierActivated(midiNote, tier);
+            // Check if this layer exists for this note
+            bool layerExists = (actualLayerIdx >= 0 && actualLayerIdx < numLayers);
 
-            // Draw the 3 RR boxes within this tier cell
+            // Check if this layer is active for this note
+            bool layerActive = layerExists &&
+                ((currentLayerIdx == actualLayerIdx) || processor.isNoteLayerActivated(midiNote, actualLayerIdx));
+
+            // Draw the 3 RR boxes within this layer cell
             float boxWidth = (noteWidth - 4 * boxGap) / 3.0f;
-            float boxHeight = tierHeight - 2 * boxGap;
+            float boxHeight = layerHeight - 2 * boxGap;
 
             for (int rr = 1; rr <= 3; ++rr)
             {
                 float boxX = noteX + boxGap + (rr - 1) * (boxWidth + boxGap);
-                float boxY = tierY + boxGap;
+                float boxY = layerY + boxGap;
                 juce::Rectangle<float> box(boxX, boxY, boxWidth, boxHeight);
 
-                // Check if this RR is active for this note in this tier
+                // Check if this RR is active for this note in this layer
                 bool rrActive = false;
-                if (tierActive)
+                if (layerActive)
                 {
-                    rrActive = (currentRR == rr && currentTier == tier) ||
-                               (processor.isNoteTierActivated(midiNote, tier) &&
+                    rrActive = (currentRR == rr && currentLayerIdx == actualLayerIdx) ||
+                               (processor.isNoteLayerActivated(midiNote, actualLayerIdx) &&
                                 processor.isNoteRRActivated(midiNote, rr));
                 }
 
-                if (rrActive)
+                if (!noteAvailable || !layerExists)
+                    g.setColour(juce::Colour(0xff252525));  // Very dark gray for unavailable
+                else if (rrActive)
                     g.setColour(juce::Colour(0xff4a9eff));  // Blue when active
-                else if (tierActive)
-                    g.setColour(juce::Colour(0xff2a5a8f));  // Dimmer blue for active tier
+                else if (layerActive)
+                    g.setColour(juce::Colour(0xff2a5a8f));  // Dimmer blue for active layer
                 else
                     g.setColour(juce::Colour(0xff3d3d3d));  // Dark gray
 
@@ -71,10 +89,13 @@ void NoteGridDisplay::paint(juce::Graphics& g)
                 g.setColour(juce::Colour(0xff222222));
                 g.drawRect(box, 0.5f);
 
-                // Draw RR number
-                g.setColour(rrActive ? juce::Colours::white : juce::Colour(0xff666666));
-                g.setFont(boxHeight * 0.4f);
-                g.drawText(juce::String(rr), box, juce::Justification::centred);
+                // Draw RR number (only if layer exists for this note)
+                if (layerExists)
+                {
+                    g.setColour(rrActive ? juce::Colours::white : juce::Colour(0xff666666));
+                    g.setFont(boxHeight * 0.4f);
+                    g.drawText(juce::String(rr), box, juce::Justification::centred);
+                }
             }
         }
 
@@ -83,10 +104,10 @@ void NoteGridDisplay::paint(juce::Graphics& g)
         g.drawLine(noteX + noteWidth, bounds.getY(), noteX + noteWidth, bounds.getBottom(), 0.5f);
     }
 
-    // Draw horizontal separators between tiers
-    for (int i = 1; i < 3; ++i)
+    // Draw horizontal separators between layers
+    for (int i = 1; i < maxLayers; ++i)
     {
-        float y = bounds.getY() + i * tierHeight;
+        float y = bounds.getY() + i * layerHeight;
         g.setColour(juce::Colour(0xff222222));
         g.drawLine(bounds.getX(), y, bounds.getRight(), y, 0.5f);
     }
@@ -126,11 +147,17 @@ void KeyboardDisplay::drawOctave(juce::Graphics& g, juce::Rectangle<float> bound
 
         int midiNote = startNote + whiteKeyOffsets[i];
         bool isPressed = processor.isNoteOn(midiNote);
+        bool isAvailable = processor.isNoteAvailable(midiNote);
+        bool hasOwnSamples = processor.noteHasOwnSamples(midiNote);
 
         if (isPressed)
-            g.setColour(juce::Colour(0xff4a9eff));
+            g.setColour(juce::Colour(0xff4a9eff));  // Blue when pressed
+        else if (!isAvailable)
+            g.setColour(juce::Colour(0xff555555));  // Dark grey - unavailable
+        else if (!hasOwnSamples)
+            g.setColour(juce::Colour(0xffcccccc));  // Light grey - uses fallback
         else
-            g.setColour(juce::Colours::white);
+            g.setColour(juce::Colours::white);      // White - has own samples
 
         g.fillRect(keyRect);
         g.setColour(juce::Colours::black);
@@ -149,11 +176,17 @@ void KeyboardDisplay::drawOctave(juce::Graphics& g, juce::Rectangle<float> bound
 
         int midiNote = startNote + blackKeyOffsets[i];
         bool isPressed = processor.isNoteOn(midiNote);
+        bool isAvailable = processor.isNoteAvailable(midiNote);
+        bool hasOwnSamples = processor.noteHasOwnSamples(midiNote);
 
         if (isPressed)
-            g.setColour(juce::Colour(0xff4a9eff));
+            g.setColour(juce::Colour(0xff4a9eff));  // Blue when pressed
+        else if (!isAvailable)
+            g.setColour(juce::Colour(0xff333333));  // Very dark grey - unavailable
+        else if (!hasOwnSamples)
+            g.setColour(juce::Colour(0xff444444));  // Dark grey - uses fallback
         else
-            g.setColour(juce::Colours::black);
+            g.setColour(juce::Colours::black);      // Black - has own samples
 
         g.fillRect(keyRect);
 
