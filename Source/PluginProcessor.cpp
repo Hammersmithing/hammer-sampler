@@ -7,6 +7,7 @@ MidiKeyboardProcessor::MidiKeyboardProcessor()
     noteVelocities.fill(0);
     noteRoundRobin.fill(0);
     noteSustained.fill(false);
+    velocityTiersActivated.fill(false);
 }
 
 void MidiKeyboardProcessor::prepareToPlay(double, int)
@@ -14,6 +15,7 @@ void MidiKeyboardProcessor::prepareToPlay(double, int)
     noteVelocities.fill(0);
     noteRoundRobin.fill(0);
     noteSustained.fill(false);
+    velocityTiersActivated.fill(false);
     currentRoundRobin = 1;
     sustainPedalDown = false;
 }
@@ -33,7 +35,7 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
 
             if (!pedalNowDown && sustainPedalDown)
             {
-                // Pedal released - clear all sustained notes
+                // Pedal released - clear all sustained notes and velocity tiers
                 for (size_t i = 0; i < 128; ++i)
                 {
                     if (noteSustained[i])
@@ -43,6 +45,7 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
                         noteSustained[i] = false;
                     }
                 }
+                velocityTiersActivated.fill(false);
             }
             sustainPedalDown = pedalNowDown;
             continue;
@@ -53,8 +56,16 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
         if (message.isNoteOn())
         {
             noteSustained[noteIndex] = false;  // Clear sustained state on new note
-            noteVelocities[noteIndex] = message.getVelocity();
+            int velocity = message.getVelocity();
+            noteVelocities[noteIndex] = velocity;
             noteRoundRobin[noteIndex] = currentRoundRobin;
+
+            // Mark velocity tier as activated if pedal is down
+            if (sustainPedalDown)
+            {
+                int tier = (velocity <= 42) ? 1 : (velocity <= 84) ? 2 : 3;
+                velocityTiersActivated[static_cast<size_t>(tier)] = true;
+            }
 
             // Advance round-robin: 1 -> 2 -> 3 -> 1
             currentRoundRobin = (currentRoundRobin % 3) + 1;

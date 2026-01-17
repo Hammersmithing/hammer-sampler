@@ -22,8 +22,6 @@ void VelocityDisplay::paint(juce::Graphics& g)
     const float rectHeight = bounds.getHeight() / 3.0f;
     const float gap = 2.0f;
 
-    int activeTier = processor.getActiveVelocityTier();
-
     // Draw 3 rectangles from top to bottom: high (3), mid (2), low (1)
     for (int i = 0; i < 3; ++i)
     {
@@ -31,7 +29,9 @@ void VelocityDisplay::paint(juce::Graphics& g)
         float y = bounds.getY() + i * rectHeight;
         juce::Rectangle<float> rect(bounds.getX(), y + gap / 2, bounds.getWidth(), rectHeight - gap);
 
-        if (activeTier == tier)
+        bool isActive = processor.isVelocityTierActive(tier);
+
+        if (isActive)
             g.setColour(juce::Colour(0xff4a9eff));  // Blue when active
         else
             g.setColour(juce::Colour(0xff3d3d3d));  // Dark gray when inactive
