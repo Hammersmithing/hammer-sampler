@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <array>
+#include "SamplerEngine.h"
 
 class MidiKeyboardProcessor : public juce::AudioProcessor
 {
@@ -12,6 +13,11 @@ public:
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+    // Sample loading
+    void loadSamplesFromFolder(const juce::File& folder);
+    bool areSamplesLoaded() const { return samplerEngine.isLoaded(); }
+    juce::String getLoadedFolderPath() const { return samplerEngine.getLoadedFolderPath(); }
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -72,6 +78,8 @@ private:
     std::array<std::array<bool, 4>, 128> noteRRActivated{};     // Per-note: which RR positions activated (index 1-3)
     int currentRoundRobin = 1;  // Next RR position to assign (cycles 1->2->3->1)
     bool sustainPedalDown = false;
+
+    SamplerEngine samplerEngine;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiKeyboardProcessor)
 };

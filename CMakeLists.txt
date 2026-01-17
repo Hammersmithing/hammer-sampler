@@ -24,6 +24,8 @@ target_sources(MidiKeyboardDisplay PRIVATE
     Source/PluginProcessor.h
     Source/PluginEditor.cpp
     Source/PluginEditor.h
+    Source/SamplerEngine.cpp
+    Source/SamplerEngine.h
 )
 
 target_compile_definitions(MidiKeyboardDisplay PUBLIC

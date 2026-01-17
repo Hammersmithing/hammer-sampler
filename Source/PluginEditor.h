@@ -46,9 +46,15 @@ public:
     void resized() override;
 
 private:
+    void loadSamplesClicked();
+
     MidiKeyboardProcessor& processorRef;
     NoteGridDisplay noteGrid;
     KeyboardDisplay keyboard;
+
+    juce::TextButton loadButton{"Load Samples..."};
+    juce::Label statusLabel;
+    std::unique_ptr<juce::FileChooser> fileChooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiKeyboardEditor)
 };

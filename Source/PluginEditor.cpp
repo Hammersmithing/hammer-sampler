@@ -197,7 +197,44 @@ MidiKeyboardEditor::MidiKeyboardEditor(MidiKeyboardProcessor& p)
 {
     addAndMakeVisible(noteGrid);
     addAndMakeVisible(keyboard);
-    setSize(1200, 560);  // 4x the original area
+
+    addAndMakeVisible(loadButton);
+    loadButton.onClick = [this] { loadSamplesClicked(); };
+
+    addAndMakeVisible(statusLabel);
+    statusLabel.setFont(juce::Font(14.0f));
+    statusLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+
+    if (processorRef.areSamplesLoaded())
+        statusLabel.setText("Loaded: " + processorRef.getLoadedFolderPath(), juce::dontSendNotification);
+    else
+        statusLabel.setText("No samples loaded", juce::dontSendNotification);
+
+    setSize(1200, 600);  // Slightly taller for controls
+}
+
+void MidiKeyboardEditor::loadSamplesClicked()
+{
+    fileChooser = std::make_unique<juce::FileChooser>(
+        "Select Sample Folder",
+        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
+        "*");
+
+    auto folderChooserFlags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories;
+
+    fileChooser->launchAsync(folderChooserFlags, [this](const juce::FileChooser& fc)
+    {
+        auto folder = fc.getResult();
+        if (folder.isDirectory())
+        {
+            processorRef.loadSamplesFromFolder(folder);
+
+            if (processorRef.areSamplesLoaded())
+                statusLabel.setText("Loaded: " + folder.getFileName(), juce::dontSendNotification);
+            else
+                statusLabel.setText("No valid samples found", juce::dontSendNotification);
+        }
+    });
 }
 
 void MidiKeyboardEditor::paint(juce::Graphics& g)
@@ -209,10 +246,22 @@ void MidiKeyboardEditor::resized()
 {
     auto bounds = getLocalBounds().reduced(10);
 
+    const int controlsHeight = 30;
     const int keyboardHeight = 120;
     const int gap = 10;
 
+    // Top controls
+    auto controlsArea = bounds.removeFromTop(controlsHeight);
+    loadButton.setBounds(controlsArea.removeFromLeft(120));
+    controlsArea.removeFromLeft(10);
+    statusLabel.setBounds(controlsArea);
+
+    bounds.removeFromTop(gap);
+
+    // Bottom keyboard
     keyboard.setBounds(bounds.removeFromBottom(keyboardHeight));
     bounds.removeFromBottom(gap);
+
+    // Middle grid
     noteGrid.setBounds(bounds);
 }

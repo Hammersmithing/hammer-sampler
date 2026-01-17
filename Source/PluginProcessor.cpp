@@ -2,7 +2,8 @@
 #include "PluginEditor.h"
 
 MidiKeyboardProcessor::MidiKeyboardProcessor()
-    : AudioProcessor(BusesProperties())
+    : AudioProcessor(BusesProperties()
+        .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
     noteVelocities.fill(0);
     noteRoundRobin.fill(0);
@@ -11,7 +12,7 @@ MidiKeyboardProcessor::MidiKeyboardProcessor()
     for (auto& arr : noteRRActivated) arr.fill(false);
 }
 
-void MidiKeyboardProcessor::prepareToPlay(double, int)
+void MidiKeyboardProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     noteVelocities.fill(0);
     noteRoundRobin.fill(0);
@@ -20,6 +21,13 @@ void MidiKeyboardProcessor::prepareToPlay(double, int)
     for (auto& arr : noteRRActivated) arr.fill(false);
     currentRoundRobin = 1;
     sustainPedalDown = false;
+
+    samplerEngine.prepareToPlay(sampleRate, samplesPerBlock);
+}
+
+void MidiKeyboardProcessor::loadSamplesFromFolder(const juce::File& folder)
+{
+    samplerEngine.loadSamplesFromFolder(folder);
 }
 
 void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
@@ -45,6 +53,7 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
                         noteVelocities[i] = 0;
                         noteRoundRobin[i] = 0;
                         noteSustained[i] = false;
+                        samplerEngine.noteOff(static_cast<int>(i));
                     }
                     noteTiersActivated[i].fill(false);
                     noteRRActivated[i].fill(false);
@@ -55,6 +64,7 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
         }
 
         auto noteIndex = static_cast<size_t>(message.getNoteNumber());
+        int midiNote = message.getNoteNumber();
 
         if (message.isNoteOn())
         {
@@ -71,6 +81,9 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
                 noteRRActivated[noteIndex][static_cast<size_t>(currentRoundRobin)] = true;
             }
 
+            // Trigger sample playback
+            samplerEngine.noteOn(midiNote, velocity, currentRoundRobin);
+
             // Advance round-robin: 1 -> 2 -> 3 -> 1
             currentRoundRobin = (currentRoundRobin % 3) + 1;
         }
@@ -86,9 +99,13 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
                 // No pedal - release immediately
                 noteVelocities[noteIndex] = 0;
                 noteRoundRobin[noteIndex] = 0;
+                samplerEngine.noteOff(midiNote);
             }
         }
     }
+
+    // Generate audio from sampler
+    samplerEngine.processBlock(buffer);
 }
 
 juce::AudioProcessorEditor* MidiKeyboardProcessor::createEditor()
