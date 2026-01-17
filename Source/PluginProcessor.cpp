@@ -7,7 +7,8 @@ MidiKeyboardProcessor::MidiKeyboardProcessor()
     noteVelocities.fill(0);
     noteRoundRobin.fill(0);
     noteSustained.fill(false);
-    velocityTiersActivated.fill(false);
+    for (auto& arr : noteTiersActivated) arr.fill(false);
+    for (auto& arr : noteRRActivated) arr.fill(false);
 }
 
 void MidiKeyboardProcessor::prepareToPlay(double, int)
@@ -15,7 +16,8 @@ void MidiKeyboardProcessor::prepareToPlay(double, int)
     noteVelocities.fill(0);
     noteRoundRobin.fill(0);
     noteSustained.fill(false);
-    velocityTiersActivated.fill(false);
+    for (auto& arr : noteTiersActivated) arr.fill(false);
+    for (auto& arr : noteRRActivated) arr.fill(false);
     currentRoundRobin = 1;
     sustainPedalDown = false;
 }
@@ -35,7 +37,7 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
 
             if (!pedalNowDown && sustainPedalDown)
             {
-                // Pedal released - clear all sustained notes and velocity tiers
+                // Pedal released - clear all sustained notes and per-note activations
                 for (size_t i = 0; i < 128; ++i)
                 {
                     if (noteSustained[i])
@@ -44,8 +46,9 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
                         noteRoundRobin[i] = 0;
                         noteSustained[i] = false;
                     }
+                    noteTiersActivated[i].fill(false);
+                    noteRRActivated[i].fill(false);
                 }
-                velocityTiersActivated.fill(false);
             }
             sustainPedalDown = pedalNowDown;
             continue;
@@ -60,11 +63,12 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
             noteVelocities[noteIndex] = velocity;
             noteRoundRobin[noteIndex] = currentRoundRobin;
 
-            // Mark velocity tier as activated if pedal is down
+            // Mark per-note velocity tier and RR as activated if pedal is down
             if (sustainPedalDown)
             {
                 int tier = (velocity <= 42) ? 1 : (velocity <= 84) ? 2 : 3;
-                velocityTiersActivated[static_cast<size_t>(tier)] = true;
+                noteTiersActivated[noteIndex][static_cast<size_t>(tier)] = true;
+                noteRRActivated[noteIndex][static_cast<size_t>(currentRoundRobin)] = true;
             }
 
             // Advance round-robin: 1 -> 2 -> 3 -> 1

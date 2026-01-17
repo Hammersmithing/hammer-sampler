@@ -2,89 +2,93 @@
 #include "PluginEditor.h"
 
 //==============================================================================
-// VelocityDisplay
+// NoteGridDisplay
 //==============================================================================
 
-VelocityDisplay::VelocityDisplay(MidiKeyboardProcessor& p)
+NoteGridDisplay::NoteGridDisplay(MidiKeyboardProcessor& p)
     : processor(p)
 {
     startTimerHz(60);
 }
 
-void VelocityDisplay::timerCallback()
+void NoteGridDisplay::timerCallback()
 {
     repaint();
 }
 
-void VelocityDisplay::paint(juce::Graphics& g)
+void NoteGridDisplay::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
-    const float rectHeight = bounds.getHeight() / 3.0f;
-    const float gap = 2.0f;
+    const float noteWidth = bounds.getWidth() / static_cast<float>(numNotes);
+    const float tierHeight = bounds.getHeight() / 3.0f;
+    const float boxGap = 1.0f;
 
-    // Draw 3 rectangles from top to bottom: high (3), mid (2), low (1)
-    for (int i = 0; i < 3; ++i)
+    for (int noteOffset = 0; noteOffset < numNotes; ++noteOffset)
     {
-        int tier = 3 - i;  // top = tier 3, middle = tier 2, bottom = tier 1
-        float y = bounds.getY() + i * rectHeight;
-        juce::Rectangle<float> rect(bounds.getX(), y + gap / 2, bounds.getWidth(), rectHeight - gap);
+        int midiNote = startNote + noteOffset;
+        float noteX = bounds.getX() + noteOffset * noteWidth;
 
-        bool isActive = processor.isVelocityTierActive(tier);
+        // Get current state for this note
+        int currentTier = processor.getNoteVelocityTier(midiNote);
+        int currentRR = processor.getNoteRoundRobin(midiNote);
 
-        if (isActive)
-            g.setColour(juce::Colour(0xff4a9eff));  // Blue when active
-        else
-            g.setColour(juce::Colour(0xff3d3d3d));  // Dark gray when inactive
+        // Draw 3 velocity tier rows (top = high/3, middle = mid/2, bottom = low/1)
+        for (int tierIdx = 0; tierIdx < 3; ++tierIdx)
+        {
+            int tier = 3 - tierIdx;  // top row = tier 3, bottom row = tier 1
+            float tierY = bounds.getY() + tierIdx * tierHeight;
 
-        g.fillRect(rect);
-        g.setColour(juce::Colours::black);
-        g.drawRect(rect, 1.0f);
+            // Check if this tier is active for this note
+            bool tierActive = (currentTier == tier) || processor.isNoteTierActivated(midiNote, tier);
+
+            // Draw the 3 RR boxes within this tier cell
+            float boxWidth = (noteWidth - 4 * boxGap) / 3.0f;
+            float boxHeight = tierHeight - 2 * boxGap;
+
+            for (int rr = 1; rr <= 3; ++rr)
+            {
+                float boxX = noteX + boxGap + (rr - 1) * (boxWidth + boxGap);
+                float boxY = tierY + boxGap;
+                juce::Rectangle<float> box(boxX, boxY, boxWidth, boxHeight);
+
+                // Check if this RR is active for this note in this tier
+                bool rrActive = false;
+                if (tierActive)
+                {
+                    rrActive = (currentRR == rr && currentTier == tier) ||
+                               (processor.isNoteTierActivated(midiNote, tier) &&
+                                processor.isNoteRRActivated(midiNote, rr));
+                }
+
+                if (rrActive)
+                    g.setColour(juce::Colour(0xff4a9eff));  // Blue when active
+                else if (tierActive)
+                    g.setColour(juce::Colour(0xff2a5a8f));  // Dimmer blue for active tier
+                else
+                    g.setColour(juce::Colour(0xff3d3d3d));  // Dark gray
+
+                g.fillRect(box);
+                g.setColour(juce::Colour(0xff222222));
+                g.drawRect(box, 0.5f);
+
+                // Draw RR number
+                g.setColour(rrActive ? juce::Colours::white : juce::Colour(0xff666666));
+                g.setFont(boxHeight * 0.4f);
+                g.drawText(juce::String(rr), box, juce::Justification::centred);
+            }
+        }
+
+        // Draw vertical separator between notes
+        g.setColour(juce::Colour(0xff222222));
+        g.drawLine(noteX + noteWidth, bounds.getY(), noteX + noteWidth, bounds.getBottom(), 0.5f);
     }
-}
 
-//==============================================================================
-// RoundRobinDisplay
-//==============================================================================
-
-RoundRobinDisplay::RoundRobinDisplay(MidiKeyboardProcessor& p)
-    : processor(p)
-{
-    startTimerHz(60);
-}
-
-void RoundRobinDisplay::timerCallback()
-{
-    repaint();
-}
-
-void RoundRobinDisplay::paint(juce::Graphics& g)
-{
-    auto bounds = getLocalBounds().toFloat();
-    const float boxSize = juce::jmin(bounds.getWidth() / 3.0f, bounds.getHeight()) - 4.0f;
-    const float totalWidth = boxSize * 3.0f + 8.0f;  // 3 boxes + gaps
-    const float startX = bounds.getCentreX() - totalWidth / 2.0f;
-    const float y = bounds.getCentreY() - boxSize / 2.0f;
-
-    for (int i = 1; i <= 3; ++i)
+    // Draw horizontal separators between tiers
+    for (int i = 1; i < 3; ++i)
     {
-        float x = startX + (i - 1) * (boxSize + 4.0f);
-        juce::Rectangle<float> box(x, y, boxSize, boxSize);
-
-        bool isActive = processor.isRoundRobinActive(i);
-
-        if (isActive)
-            g.setColour(juce::Colour(0xff4a9eff));  // Blue when active
-        else
-            g.setColour(juce::Colour(0xff3d3d3d));  // Dark gray when inactive
-
-        g.fillRect(box);
-        g.setColour(juce::Colours::black);
-        g.drawRect(box, 1.0f);
-
-        // Draw the number label
-        g.setColour(isActive ? juce::Colours::white : juce::Colour(0xff888888));
-        g.setFont(boxSize * 0.5f);
-        g.drawText(juce::String(i), box, juce::Justification::centred);
+        float y = bounds.getY() + i * tierHeight;
+        g.setColour(juce::Colour(0xff222222));
+        g.drawLine(bounds.getX(), y, bounds.getRight(), y, 0.5f);
     }
 }
 
@@ -189,12 +193,11 @@ void KeyboardDisplay::paint(juce::Graphics& g)
 //==============================================================================
 
 MidiKeyboardEditor::MidiKeyboardEditor(MidiKeyboardProcessor& p)
-    : AudioProcessorEditor(&p), processorRef(p), velocityDisplay(p), roundRobinDisplay(p), keyboard(p)
+    : AudioProcessorEditor(&p), processorRef(p), noteGrid(p), keyboard(p)
 {
-    addAndMakeVisible(velocityDisplay);
-    addAndMakeVisible(roundRobinDisplay);
+    addAndMakeVisible(noteGrid);
     addAndMakeVisible(keyboard);
-    setSize(600, 280);
+    setSize(1200, 560);  // 4x the original area
 }
 
 void MidiKeyboardEditor::paint(juce::Graphics& g)
@@ -204,15 +207,12 @@ void MidiKeyboardEditor::paint(juce::Graphics& g)
 
 void MidiKeyboardEditor::resized()
 {
-    auto bounds = getLocalBounds().reduced(5);
+    auto bounds = getLocalBounds().reduced(10);
 
-    const int velocityHeight = 75;   // 3 velocity rectangles
-    const int roundRobinHeight = 70; // Round-robin boxes
-    const int gap = 5;
+    const int keyboardHeight = 120;
+    const int gap = 10;
 
-    velocityDisplay.setBounds(bounds.removeFromTop(velocityHeight));
-    bounds.removeFromTop(gap);
-    roundRobinDisplay.setBounds(bounds.removeFromTop(roundRobinHeight));
-    bounds.removeFromTop(gap);
-    keyboard.setBounds(bounds);
+    keyboard.setBounds(bounds.removeFromBottom(keyboardHeight));
+    bounds.removeFromBottom(gap);
+    noteGrid.setBounds(bounds);
 }

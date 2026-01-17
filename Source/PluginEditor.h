@@ -2,26 +2,19 @@
 
 #include "PluginProcessor.h"
 
-class VelocityDisplay : public juce::Component, public juce::Timer
+class NoteGridDisplay : public juce::Component, public juce::Timer
 {
 public:
-    VelocityDisplay(MidiKeyboardProcessor& p);
+    NoteGridDisplay(MidiKeyboardProcessor& p);
     void paint(juce::Graphics& g) override;
     void timerCallback() override;
 
 private:
     MidiKeyboardProcessor& processor;
-};
 
-class RoundRobinDisplay : public juce::Component, public juce::Timer
-{
-public:
-    RoundRobinDisplay(MidiKeyboardProcessor& p);
-    void paint(juce::Graphics& g) override;
-    void timerCallback() override;
-
-private:
-    MidiKeyboardProcessor& processor;
+    static constexpr int startNote = 48;  // C3
+    static constexpr int endNote = 84;    // B5 (exclusive, so 36 notes)
+    static constexpr int numNotes = 36;
 };
 
 class KeyboardDisplay : public juce::Component, public juce::Timer
@@ -34,7 +27,6 @@ public:
 private:
     MidiKeyboardProcessor& processor;
 
-    // Draw a single octave starting at the given MIDI note
     void drawOctave(juce::Graphics& g, juce::Rectangle<float> bounds, int startNote);
 
     bool isBlackKey(int noteInOctave) const
@@ -55,8 +47,7 @@ public:
 
 private:
     MidiKeyboardProcessor& processorRef;
-    VelocityDisplay velocityDisplay;
-    RoundRobinDisplay roundRobinDisplay;
+    NoteGridDisplay noteGrid;
     KeyboardDisplay keyboard;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiKeyboardEditor)
