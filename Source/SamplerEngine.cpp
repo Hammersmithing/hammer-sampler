@@ -1,5 +1,6 @@
 #include "SamplerEngine.h"
 #include <algorithm>
+#include <cmath>
 
 SamplerEngine::SamplerEngine()
 {
@@ -244,8 +245,10 @@ void SamplerEngine::buildNoteFallbacks()
     }
 }
 
-std::shared_ptr<Sample> SamplerEngine::findSample(int midiNote, int velocity, int roundRobin) const
+std::shared_ptr<Sample> SamplerEngine::findSample(int midiNote, int velocity, int roundRobin, int& actualSampleNote) const
 {
+    actualSampleNote = midiNote;
+
     auto it = noteMappings.find(midiNote);
     if (it == noteMappings.end())
         return nullptr;
@@ -254,6 +257,7 @@ std::shared_ptr<Sample> SamplerEngine::findSample(int midiNote, int velocity, in
 
     // If this note has a fallback, use the fallback note's samples
     int actualNote = (mapping.fallbackNote >= 0) ? mapping.fallbackNote : midiNote;
+    actualSampleNote = actualNote;
 
     auto actualIt = noteMappings.find(actualNote);
     if (actualIt == noteMappings.end())
@@ -290,9 +294,16 @@ std::shared_ptr<Sample> SamplerEngine::findSample(int midiNote, int velocity, in
 
 void SamplerEngine::noteOn(int midiNote, int velocity, int roundRobin)
 {
-    auto sample = findSample(midiNote, velocity, roundRobin);
+    int actualSampleNote = midiNote;
+    auto sample = findSample(midiNote, velocity, roundRobin, actualSampleNote);
     if (!sample)
         return;
+
+    // Calculate pitch ratio: how much to shift to go from actualSampleNote to midiNote
+    // If midiNote < actualSampleNote, we need to pitch DOWN (ratio < 1.0)
+    // Formula: ratio = 2^((midiNote - actualSampleNote) / 12)
+    int semitoneDiff = midiNote - actualSampleNote;
+    double pitchRatio = std::pow(2.0, semitoneDiff / 12.0);
 
     // Find a free voice or steal the oldest one
     Voice* voiceToUse = nullptr;
@@ -310,7 +321,7 @@ void SamplerEngine::noteOn(int midiNote, int velocity, int roundRobin)
     // If no inactive voice, steal the one with the most progress
     if (!voiceToUse)
     {
-        int maxPosition = -1;
+        double maxPosition = -1.0;
         for (auto& voice : voices)
         {
             if (voice.position > maxPosition)
@@ -324,7 +335,8 @@ void SamplerEngine::noteOn(int midiNote, int velocity, int roundRobin)
     if (voiceToUse)
     {
         voiceToUse->sample = sample;
-        voiceToUse->position = 0;
+        voiceToUse->position = 0.0;
+        voiceToUse->pitchRatio = pitchRatio;
         voiceToUse->midiNote = midiNote;
         voiceToUse->active = true;
     }
@@ -351,27 +363,41 @@ void SamplerEngine::processBlock(juce::AudioBuffer<float>& buffer)
         const int sampleLength = sampleBuffer.getNumSamples();
         const int sampleChannels = sampleBuffer.getNumChannels();
 
-        int samplesToProcess = juce::jmin(numSamples, sampleLength - voice.position);
-        if (samplesToProcess <= 0)
+        // Process each output sample with pitch-shifted interpolation
+        for (int i = 0; i < numSamples; ++i)
         {
-            voice.active = false;
-            voice.sample = nullptr;
-            continue;
-        }
+            // Check if we've reached the end of the sample
+            if (voice.position >= static_cast<double>(sampleLength - 1))
+            {
+                voice.active = false;
+                voice.sample = nullptr;
+                break;
+            }
 
-        // Add sample audio to output buffer
-        for (int ch = 0; ch < numChannels; ++ch)
-        {
-            int srcCh = juce::jmin(ch, sampleChannels - 1);
-            buffer.addFrom(ch, 0, sampleBuffer, srcCh, voice.position, samplesToProcess);
-        }
+            // Linear interpolation between two sample points
+            int pos0 = static_cast<int>(voice.position);
+            int pos1 = pos0 + 1;
+            double frac = voice.position - static_cast<double>(pos0);
 
-        voice.position += samplesToProcess;
+            // Clamp pos1 to valid range
+            if (pos1 >= sampleLength)
+                pos1 = sampleLength - 1;
 
-        if (voice.position >= sampleLength)
-        {
-            voice.active = false;
-            voice.sample = nullptr;
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                int srcCh = juce::jmin(ch, sampleChannels - 1);
+                const float* src = sampleBuffer.getReadPointer(srcCh);
+
+                // Linear interpolation
+                float sample0 = src[pos0];
+                float sample1 = src[pos1];
+                float interpolated = static_cast<float>(sample0 + (sample1 - sample0) * frac);
+
+                buffer.addSample(ch, i, interpolated);
+            }
+
+            // Advance position by pitch ratio
+            voice.position += voice.pitchRatio;
         }
     }
 }

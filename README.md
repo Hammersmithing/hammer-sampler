@@ -63,13 +63,13 @@ Samples don't need to cover all 127 velocity values. The plugin automatically cr
 
 If a note has no samples available:
 - The plugin uses the **first available sample higher in pitch**
-- **No pitch-shifting is applied** - the sample plays at its original pitch
-- This allows sparse sample sets while maintaining coverage
+- **Pitch-shifting is applied** - the sample is transposed down to sound at the correct pitch
+- Uses high-quality linear interpolation for smooth pitch shifting
 
 **Example:**
 If you have samples for C4, E4, and G4, but play D4:
 - D4 will trigger the E4 sample (next higher available note)
-- The sample plays at E4's pitch, not pitch-shifted to D4
+- The sample is pitch-shifted down 2 semitones to sound like D4
 
 ### Round-Robin
 

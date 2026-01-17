@@ -58,7 +58,8 @@ private:
     void buildNoteFallbacks();
 
     // Find the sample to play for a given note/velocity/roundRobin
-    std::shared_ptr<Sample> findSample(int midiNote, int velocity, int roundRobin) const;
+    // Returns the sample and the actual MIDI note of the sample (for pitch calculation)
+    std::shared_ptr<Sample> findSample(int midiNote, int velocity, int roundRobin, int& actualSampleNote) const;
 
     std::map<int, NoteMapping> noteMappings; // Key: MIDI note number
     juce::AudioFormatManager formatManager;
@@ -67,7 +68,8 @@ private:
     struct Voice
     {
         std::shared_ptr<Sample> sample;
-        int position = 0;
+        double position = 0.0;      // Fractional position for pitch shifting
+        double pitchRatio = 1.0;    // Playback rate (< 1.0 = lower pitch)
         int midiNote = 0;
         bool active = false;
     };
