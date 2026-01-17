@@ -61,7 +61,9 @@ public:
 private:
     std::array<int, 128> noteVelocities{};
     std::array<int, 128> noteRoundRobin{};  // Which RR position each note triggered (0=none, 1-3)
+    std::array<bool, 128> noteSustained{};  // Notes held by sustain pedal
     int currentRoundRobin = 1;  // Next RR position to assign (cycles 1->2->3->1)
+    bool sustainPedalDown = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiKeyboardProcessor)
 };
