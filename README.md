@@ -355,6 +355,32 @@ Piano Samples/
 
 ---
 
+## Future Improvements
+
+Potential features to implement:
+
+### Audio Features
+- **Loop points** - For sustaining instruments (organs, pads) that need seamless looping
+- **Release samples** - Trigger separate samples on note-off (piano key release sounds)
+- **Pitch bend / mod wheel** - MIDI CC handling for expression
+- **Per-note panning** - Stereo spread across the keyboard range
+
+### Engine Improvements
+- **Sample rate conversion** - Resample on-the-fly if samples don't match host rate
+- **More round-robin positions** - Expand beyond 1-3 for libraries with more variations
+- **Legato mode** - Monophonic playing with glide
+
+### UI/UX
+- **Waveform display** - Show sample waveforms in the UI
+- **Velocity curve editor** - Visual curve instead of just a knob
+- **Preset browser** - Save/load instrument configurations
+
+### Stability
+- **Unit tests** - Test ring buffer, voice management, file parsing
+- **Stress testing** - Automated polyphony torture tests
+
+---
+
 ## Author
 
 ALDENHammersmith
