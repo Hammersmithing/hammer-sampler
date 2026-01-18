@@ -32,6 +32,11 @@ void MidiKeyboardProcessor::loadSamplesFromFolder(const juce::File& folder)
     samplerEngine.loadSamplesFromFolder(folder);
 }
 
+void MidiKeyboardProcessor::loadSamplesStreamingFromFolder(const juce::File& folder)
+{
+    samplerEngine.loadSamplesStreamingFromFolder(folder);
+}
+
 void MidiKeyboardProcessor::setADSR(float attack, float decay, float sustain, float release)
 {
     samplerEngine.setADSR(attack, decay, sustain, release);

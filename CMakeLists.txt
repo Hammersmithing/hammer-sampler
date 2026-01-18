@@ -26,6 +26,11 @@ target_sources(MidiKeyboardDisplay PRIVATE
     Source/PluginEditor.h
     Source/SamplerEngine.cpp
     Source/SamplerEngine.h
+    Source/DiskStreaming.h
+    Source/StreamingVoice.cpp
+    Source/StreamingVoice.h
+    Source/DiskStreamer.cpp
+    Source/DiskStreamer.h
 )
 
 target_compile_definitions(MidiKeyboardDisplay PUBLIC

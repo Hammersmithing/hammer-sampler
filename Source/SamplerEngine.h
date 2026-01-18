@@ -4,11 +4,15 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <map>
 #include <vector>
+#include <array>
 #include <memory>
 #include <atomic>
 #include <thread>
 #include <mutex>
 #include <future>
+#include "DiskStreaming.h"
+#include "StreamingVoice.h"
+#include "DiskStreamer.h"
 
 struct Sample
 {
@@ -58,14 +62,20 @@ public:
     void noteOff(int midiNote);
     void processBlock(juce::AudioBuffer<float>& buffer);
 
-    bool isLoaded() const { return loadingState == LoadingState::Loaded && !noteMappings.empty(); }
+    bool isLoaded() const;
     bool isLoading() const { return loadingState == LoadingState::Loading; }
     LoadingState getLoadingState() const { return loadingState; }
     juce::String getLoadedFolderPath() const { return loadedFolderPath; }
+    int64_t getTotalInstrumentFileSize() const { return totalInstrumentFileSize.load(); }
 
     // ADSR controls
     void setADSR(float attack, float decay, float sustain, float release);
     ADSRParams getADSR() const { return adsrParams; }
+
+    // Streaming mode controls
+    bool isStreamingEnabled() const { return streamingEnabled; }
+    void setStreamingEnabled(bool enabled);
+    void loadSamplesStreamingFromFolder(const juce::File& folder);
 
     // Query sample configuration for UI
     bool isNoteAvailable(int midiNote) const;  // Has samples or valid fallback
@@ -117,10 +127,40 @@ private:
 
     double currentSampleRate = 44100.0;
     juce::String loadedFolderPath;
+    std::atomic<int64_t> totalInstrumentFileSize{0};  // Total file size in bytes
 
     // Async loading
     std::atomic<LoadingState> loadingState{LoadingState::Idle};
     std::unique_ptr<std::thread> loadingThread;
-    std::mutex mappingsMutex;
+    mutable std::recursive_mutex mappingsMutex;  // mutable + recursive for nested const method calls
     void loadSamplesInBackground(const juce::String& folderPath);
+
+    // ==================== Streaming Mode ====================
+    bool streamingEnabled = false;
+
+    // Streaming voices
+    std::array<StreamingVoice, StreamingConstants::maxStreamingVoices> streamingVoices;
+
+    // Background disk streaming thread
+    std::unique_ptr<DiskStreamer> diskStreamer;
+
+    // Preloaded samples for streaming (maps note -> velocity -> roundRobin -> sample)
+    struct StreamingSample
+    {
+        PreloadedSample preload;
+        int midiNote = 0;
+        int velocity = 0;
+        int roundRobin = 0;
+    };
+    std::vector<StreamingSample> streamingSamples;
+
+    // Format manager for streaming (owned, shared with DiskStreamer)
+    juce::AudioFormatManager streamingFormatManager;
+
+    // Streaming-specific methods
+    void processBlockStreaming(juce::AudioBuffer<float>& buffer);
+    void noteOnStreaming(int midiNote, int velocity, int roundRobin);
+    void noteOffStreaming(int midiNote);
+    void loadSamplesStreamingInBackground(const juce::String& folderPath);
+    const StreamingSample* findStreamingSample(int midiNote, int velocity, int roundRobin) const;
 };

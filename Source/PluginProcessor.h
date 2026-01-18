@@ -17,9 +17,15 @@ public:
 
     // Sample loading
     void loadSamplesFromFolder(const juce::File& folder);
+    void loadSamplesStreamingFromFolder(const juce::File& folder);
     bool areSamplesLoaded() const { return samplerEngine.isLoaded(); }
     bool areSamplesLoading() const { return samplerEngine.isLoading(); }
     juce::String getLoadedFolderPath() const { return samplerEngine.getLoadedFolderPath(); }
+    int64_t getTotalInstrumentFileSize() const { return samplerEngine.getTotalInstrumentFileSize(); }
+
+    // Streaming mode
+    bool isStreamingEnabled() const { return samplerEngine.isStreamingEnabled(); }
+    void setStreamingEnabled(bool enabled) { samplerEngine.setStreamingEnabled(enabled); }
 
     // ADSR controls
     void setADSR(float attack, float decay, float sustain, float release);

@@ -298,7 +298,61 @@ MidiKeyboardEditor::MidiKeyboardEditor(MidiKeyboardProcessor& p)
     setupSlider(sustainSlider, sustainLabel, 0.0, 1.0, adsr.sustain);
     setupSlider(releaseSlider, releaseLabel, 0.001, 3.0, adsr.release);
 
+    // Setup streaming toggle
+    addAndMakeVisible(streamingToggle);
+    streamingToggle.setToggleState(processorRef.isStreamingEnabled(), juce::dontSendNotification);
+    streamingToggle.onClick = [this] { streamingToggleChanged(); };
+
+    addAndMakeVisible(streamingLabel);
+    streamingLabel.setFont(juce::FontOptions(12.0f));
+    streamingLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    streamingLabel.setText(processorRef.isStreamingEnabled() ? "Mode: STREAMING" : "Mode: RAM", juce::dontSendNotification);
+
+    // File size label
+    addAndMakeVisible(fileSizeLabel);
+    fileSizeLabel.setFont(juce::FontOptions(12.0f));
+    fileSizeLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    fileSizeLabel.setJustificationType(juce::Justification::centredRight);
+
+    // Start timer for async loading status updates
+    startTimerHz(10);
+
     setSize(1400, 650);  // Wider for 88 keys, taller for ADSR controls
+}
+
+void MidiKeyboardEditor::timerCallback()
+{
+    // Check if we're waiting for loading to complete
+    if (pendingLoadFolder.isNotEmpty())
+    {
+        if (processorRef.areSamplesLoaded())
+        {
+            juce::String modeStr = pendingLoadStreaming ? " [STREAMING]" : " [RAM]";
+            statusLabel.setText("Loaded: " + pendingLoadFolder + modeStr, juce::dontSendNotification);
+            pendingLoadFolder.clear();
+
+            // Update file size display
+            int64_t totalBytes = processorRef.getTotalInstrumentFileSize();
+            juce::String sizeStr;
+            if (totalBytes >= 1024 * 1024 * 1024)
+                sizeStr = juce::String(totalBytes / (1024.0 * 1024.0 * 1024.0), 2) + " GB";
+            else if (totalBytes >= 1024 * 1024)
+                sizeStr = juce::String(totalBytes / (1024.0 * 1024.0), 1) + " MB";
+            else if (totalBytes >= 1024)
+                sizeStr = juce::String(totalBytes / 1024.0, 1) + " KB";
+            else
+                sizeStr = juce::String(totalBytes) + " B";
+            fileSizeLabel.setText("Size: " + sizeStr, juce::dontSendNotification);
+        }
+        else if (!processorRef.areSamplesLoading())
+        {
+            // Loading finished but no samples found
+            statusLabel.setText("No valid samples found", juce::dontSendNotification);
+            fileSizeLabel.setText("", juce::dontSendNotification);
+            pendingLoadFolder.clear();
+        }
+        // else still loading, keep showing "Loading..."
+    }
 }
 
 void MidiKeyboardEditor::updateADSR()
@@ -309,6 +363,19 @@ void MidiKeyboardEditor::updateADSR()
         static_cast<float>(sustainSlider.getValue()),
         static_cast<float>(releaseSlider.getValue())
     );
+}
+
+void MidiKeyboardEditor::streamingToggleChanged()
+{
+    bool streaming = streamingToggle.getToggleState();
+    processorRef.setStreamingEnabled(streaming);
+    streamingLabel.setText(streaming ? "Mode: STREAMING" : "Mode: RAM", juce::dontSendNotification);
+
+    // Update status to indicate reload needed
+    if (processorRef.areSamplesLoaded())
+    {
+        statusLabel.setText("Reload samples to apply mode change", juce::dontSendNotification);
+    }
 }
 
 void MidiKeyboardEditor::loadSamplesClicked()
@@ -325,12 +392,18 @@ void MidiKeyboardEditor::loadSamplesClicked()
         auto folder = fc.getResult();
         if (folder.isDirectory())
         {
-            processorRef.loadSamplesFromFolder(folder);
+            bool streaming = processorRef.isStreamingEnabled();
+            juce::String modeStr = streaming ? " [STREAMING]" : " [RAM]";
 
-            if (processorRef.areSamplesLoaded())
-                statusLabel.setText("Loaded: " + folder.getFileName(), juce::dontSendNotification);
+            if (streaming)
+                processorRef.loadSamplesStreamingFromFolder(folder);
             else
-                statusLabel.setText("No valid samples found", juce::dontSendNotification);
+                processorRef.loadSamplesFromFolder(folder);
+
+            // Show loading status - actual completion handled by timer in NoteGridDisplay
+            statusLabel.setText("Loading: " + folder.getFileName() + modeStr + "...", juce::dontSendNotification);
+            pendingLoadFolder = folder.getFileName();
+            pendingLoadStreaming = streaming;
         }
     });
 }
@@ -353,6 +426,17 @@ void MidiKeyboardEditor::resized()
     auto controlsArea = bounds.removeFromTop(controlsHeight);
     loadButton.setBounds(controlsArea.removeFromLeft(120));
     controlsArea.removeFromLeft(10);
+
+    // File size on the right
+    fileSizeLabel.setBounds(controlsArea.removeFromRight(100));
+    controlsArea.removeFromRight(10);
+
+    // Streaming toggle
+    auto streamingArea = controlsArea.removeFromRight(200);
+    streamingLabel.setBounds(streamingArea.removeFromRight(110));
+    streamingToggle.setBounds(streamingArea);
+
+    controlsArea.removeFromRight(10);
     statusLabel.setBounds(controlsArea);
 
     bounds.removeFromTop(gap);

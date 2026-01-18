@@ -36,7 +36,7 @@ private:
     }
 };
 
-class MidiKeyboardEditor : public juce::AudioProcessorEditor
+class MidiKeyboardEditor : public juce::AudioProcessorEditor, public juce::Timer
 {
 public:
     explicit MidiKeyboardEditor(MidiKeyboardProcessor&);
@@ -44,6 +44,7 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
+    void timerCallback() override;
 
 private:
     void loadSamplesClicked();
@@ -56,11 +57,23 @@ private:
     juce::Label statusLabel;
     std::unique_ptr<juce::FileChooser> fileChooser;
 
+    // Streaming toggle
+    juce::ToggleButton streamingToggle{"Streaming"};
+    juce::Label streamingLabel;
+    void streamingToggleChanged();
+
+    // Instrument info
+    juce::Label fileSizeLabel;
+
     // ADSR controls
     juce::Slider attackSlider, decaySlider, sustainSlider, releaseSlider;
     juce::Label attackLabel{"", "A"}, decayLabel{"", "D"}, sustainLabel{"", "S"}, releaseLabel{"", "R"};
 
     void updateADSR();
+
+    // Async loading state
+    juce::String pendingLoadFolder;
+    bool pendingLoadStreaming = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiKeyboardEditor)
 };

@@ -2,13 +2,39 @@
 #include <algorithm>
 #include <cmath>
 
+// Debug logging
+static void engineDebugLog(const juce::String& msg)
+{
+    auto logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory)
+                       .getChildFile("sampler_streaming_debug.txt");
+    auto timestamp = juce::Time::getCurrentTime().toString(true, true, true, true);
+    logFile.appendText("[" + timestamp + "] " + msg + "\n");
+}
+
 SamplerEngine::SamplerEngine()
 {
     formatManager.registerBasicFormats();
+    streamingFormatManager.registerBasicFormats();
+
+    // Initialize disk streamer
+    diskStreamer = std::make_unique<DiskStreamer>();
+    diskStreamer->setAudioFormatManager(&streamingFormatManager);
+
+    // Register streaming voices with disk streamer
+    for (int i = 0; i < StreamingConstants::maxStreamingVoices; ++i)
+    {
+        diskStreamer->registerVoice(i, &streamingVoices[static_cast<size_t>(i)]);
+    }
 }
 
 SamplerEngine::~SamplerEngine()
 {
+    // Stop disk streaming thread
+    if (diskStreamer)
+    {
+        diskStreamer->stopThread();
+    }
+
     // Wait for any loading thread to finish
     if (loadingThread && loadingThread->joinable())
     {
@@ -16,7 +42,7 @@ SamplerEngine::~SamplerEngine()
     }
 }
 
-void SamplerEngine::prepareToPlay(double sampleRate, int /*samplesPerBlock*/)
+void SamplerEngine::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     currentSampleRate = sampleRate;
 
@@ -29,6 +55,18 @@ void SamplerEngine::prepareToPlay(double sampleRate, int /*samplesPerBlock*/)
         voice.envStage = EnvelopeStage::Idle;
         voice.envLevel = 0.0f;
     }
+
+    // Prepare streaming voices
+    for (auto& voice : streamingVoices)
+    {
+        voice.prepareToPlay(sampleRate, samplesPerBlock);
+    }
+
+    // Start disk streamer if streaming is enabled
+    if (streamingEnabled && diskStreamer)
+    {
+        diskStreamer->startThread();
+    }
 }
 
 void SamplerEngine::setADSR(float attack, float decay, float sustain, float release)
@@ -39,8 +77,16 @@ void SamplerEngine::setADSR(float attack, float decay, float sustain, float rele
     adsrParams.release = juce::jmax(0.001f, release);
 }
 
+bool SamplerEngine::isLoaded() const
+{
+    std::lock_guard<std::recursive_mutex> lock(mappingsMutex);
+    return loadingState == LoadingState::Loaded && !noteMappings.empty();
+}
+
 bool SamplerEngine::isNoteAvailable(int midiNote) const
 {
+    std::lock_guard<std::recursive_mutex> lock(mappingsMutex);
+
     auto it = noteMappings.find(midiNote);
     if (it == noteMappings.end())
         return false;
@@ -52,6 +98,8 @@ bool SamplerEngine::isNoteAvailable(int midiNote) const
 
 bool SamplerEngine::noteHasOwnSamples(int midiNote) const
 {
+    std::lock_guard<std::recursive_mutex> lock(mappingsMutex);
+
     auto it = noteMappings.find(midiNote);
     if (it == noteMappings.end())
         return false;
@@ -61,6 +109,8 @@ bool SamplerEngine::noteHasOwnSamples(int midiNote) const
 
 std::vector<int> SamplerEngine::getVelocityLayers(int midiNote) const
 {
+    std::lock_guard<std::recursive_mutex> lock(mappingsMutex);
+
     std::vector<int> velocities;
 
     auto it = noteMappings.find(midiNote);
@@ -86,6 +136,8 @@ std::vector<int> SamplerEngine::getVelocityLayers(int midiNote) const
 
 int SamplerEngine::getLowestAvailableNote() const
 {
+    std::lock_guard<std::recursive_mutex> lock(mappingsMutex);
+
     for (int note = 0; note < 128; ++note)
     {
         if (noteHasOwnSamples(note))
@@ -96,6 +148,8 @@ int SamplerEngine::getLowestAvailableNote() const
 
 int SamplerEngine::getHighestAvailableNote() const
 {
+    std::lock_guard<std::recursive_mutex> lock(mappingsMutex);
+
     for (int note = 127; note >= 0; --note)
     {
         if (noteHasOwnSamples(note))
@@ -106,6 +160,8 @@ int SamplerEngine::getHighestAvailableNote() const
 
 int SamplerEngine::getMaxVelocityLayers(int startNote, int endNote) const
 {
+    std::lock_guard<std::recursive_mutex> lock(mappingsMutex);
+
     int maxLayers = 0;
     for (int note = startNote; note < endNote; ++note)
     {
@@ -118,6 +174,8 @@ int SamplerEngine::getMaxVelocityLayers(int startNote, int endNote) const
 
 int SamplerEngine::getVelocityLayerIndex(int midiNote, int velocity) const
 {
+    std::lock_guard<std::recursive_mutex> lock(mappingsMutex);
+
     auto it = noteMappings.find(midiNote);
     if (it == noteMappings.end())
         return -1;
@@ -269,6 +327,10 @@ void SamplerEngine::loadSamplesInBackground(const juce::String& folderPath)
     // Create temporary mappings
     std::map<int, NoteMapping> tempMappings;
 
+    // Reset file size counter
+    totalInstrumentFileSize = 0;
+    int64_t tempTotalSize = 0;
+
     // Find all audio files
     juce::Array<juce::File> audioFiles;
     folder.findChildFiles(audioFiles, juce::File::findFiles, false, "*.wav;*.aif;*.aiff;*.flac;*.mp3");
@@ -290,8 +352,12 @@ void SamplerEngine::loadSamplesInBackground(const juce::String& folderPath)
         if (parseFileName(file.getFileName(), note, velocity, roundRobin))
         {
             filesToLoad.push_back({file, {note, velocity, roundRobin}});
+            tempTotalSize += file.getSize();
         }
     }
+
+    // Store total file size
+    totalInstrumentFileSize = tempTotalSize;
 
     // Load samples in parallel using std::async
     std::vector<std::future<LoadedSample>> futures;
@@ -402,7 +468,7 @@ void SamplerEngine::loadSamplesInBackground(const juce::String& folderPath)
 
     // Swap in the new mappings (thread-safe)
     {
-        std::lock_guard<std::mutex> lock(mappingsMutex);
+        std::lock_guard<std::recursive_mutex> lock(mappingsMutex);
         noteMappings = std::move(tempMappings);
     }
 
@@ -521,6 +587,13 @@ std::shared_ptr<Sample> SamplerEngine::findSample(int midiNote, int velocity, in
 
 void SamplerEngine::noteOn(int midiNote, int velocity, int roundRobin)
 {
+    // Route to streaming if enabled
+    if (streamingEnabled)
+    {
+        noteOnStreaming(midiNote, velocity, roundRobin);
+        return;
+    }
+
     int actualSampleNote = midiNote;
     auto sample = findSample(midiNote, velocity, roundRobin, actualSampleNote);
     if (!sample)
@@ -577,6 +650,13 @@ void SamplerEngine::noteOn(int midiNote, int velocity, int roundRobin)
 
 void SamplerEngine::noteOff(int midiNote)
 {
+    // Route to streaming if enabled
+    if (streamingEnabled)
+    {
+        noteOffStreaming(midiNote);
+        return;
+    }
+
     // Find voices playing this note and trigger release
     for (auto& voice : voices)
     {
@@ -592,6 +672,13 @@ void SamplerEngine::noteOff(int midiNote)
 
 void SamplerEngine::processBlock(juce::AudioBuffer<float>& buffer)
 {
+    // Route to streaming if enabled
+    if (streamingEnabled)
+    {
+        processBlockStreaming(buffer);
+        return;
+    }
+
     const int numSamples = buffer.getNumSamples();
     const int numChannels = buffer.getNumChannels();
 
@@ -688,6 +775,351 @@ void SamplerEngine::processBlock(juce::AudioBuffer<float>& buffer)
 
             // Advance position by pitch ratio
             voice.position += voice.pitchRatio;
+        }
+    }
+}
+
+// ==================== Streaming Mode Implementation ====================
+
+void SamplerEngine::setStreamingEnabled(bool enabled)
+{
+    engineDebugLog(">>> setStreamingEnabled(" + juce::String(enabled ? "true" : "false") + ")");
+
+    if (streamingEnabled == enabled)
+        return;
+
+    streamingEnabled = enabled;
+
+    if (enabled)
+    {
+        engineDebugLog("Starting disk streaming thread...");
+        if (diskStreamer)
+        {
+            diskStreamer->startThread();
+        }
+    }
+    else
+    {
+        engineDebugLog("Stopping disk streaming thread...");
+        if (diskStreamer)
+        {
+            diskStreamer->stopThread();
+        }
+
+        for (auto& voice : streamingVoices)
+        {
+            voice.reset();
+        }
+    }
+}
+
+void SamplerEngine::loadSamplesStreamingFromFolder(const juce::File& folder)
+{
+    // Wait for any existing loading to complete
+    if (loadingThread && loadingThread->joinable())
+    {
+        loadingThread->join();
+    }
+
+    loadedFolderPath = folder.getFullPathName();
+
+    if (!folder.isDirectory())
+        return;
+
+    // Start background loading
+    loadingState = LoadingState::Loading;
+    loadingThread = std::make_unique<std::thread>(&SamplerEngine::loadSamplesStreamingInBackground, this, folder.getFullPathName());
+}
+
+void SamplerEngine::loadSamplesStreamingInBackground(const juce::String& folderPath)
+{
+    engineDebugLog("Loading samples in STREAMING mode from: " + folderPath);
+
+    juce::File folder(folderPath);
+
+    // Clear previous streaming samples
+    std::vector<StreamingSample> tempSamples;
+
+    // Reset file size counter
+    totalInstrumentFileSize = 0;
+    int64_t tempTotalSize = 0;
+
+    // Find all audio files
+    juce::Array<juce::File> audioFiles;
+    folder.findChildFiles(audioFiles, juce::File::findFiles, false, "*.wav;*.aif;*.aiff;*.flac;*.mp3");
+
+    engineDebugLog("Found " + juce::String(audioFiles.size()) + " audio files");
+
+    size_t totalPreloadBytes = 0;
+    size_t totalFullBytes = 0;
+
+    for (const auto& file : audioFiles)
+    {
+        int note, velocity, roundRobin;
+        if (!parseFileName(file.getFileName(), note, velocity, roundRobin))
+            continue;
+
+        // Track file size
+        tempTotalSize += file.getSize();
+
+        // Create reader
+        std::unique_ptr<juce::AudioFormatReader> reader(streamingFormatManager.createReaderFor(file));
+        if (!reader)
+            continue;
+
+        StreamingSample ss;
+        ss.midiNote = note;
+        ss.velocity = velocity;
+        ss.roundRobin = roundRobin;
+
+        // Fill preload info
+        ss.preload.filePath = file.getFullPathName();
+        ss.preload.sampleRate = reader->sampleRate;
+        ss.preload.numChannels = static_cast<int>(reader->numChannels);
+        ss.preload.totalSampleFrames = static_cast<int64_t>(reader->lengthInSamples);
+        ss.preload.name = file.getFileNameWithoutExtension();
+        ss.preload.rootNote = note;
+        ss.preload.lowNote = note;
+        ss.preload.highNote = note;
+        ss.preload.lowVelocity = velocity;
+        ss.preload.highVelocity = velocity;
+
+        // Calculate preload size in frames (64KB / (channels * 4 bytes))
+        int bytesPerSample = 4;
+        ss.preload.preloadSizeFrames = PreloadedSample::preloadSizeBytes /
+                                       (ss.preload.numChannels * bytesPerSample);
+
+        // Cap preload to total sample length
+        int framesToPreload = std::min(ss.preload.preloadSizeFrames,
+                                        static_cast<int>(ss.preload.totalSampleFrames));
+
+        // Load the preload buffer
+        ss.preload.preloadBuffer.setSize(ss.preload.numChannels, framesToPreload);
+        reader->read(&ss.preload.preloadBuffer, 0, framesToPreload, 0, true, true);
+
+        // Track memory usage
+        totalPreloadBytes += static_cast<size_t>(framesToPreload * ss.preload.numChannels * bytesPerSample);
+        totalFullBytes += static_cast<size_t>(ss.preload.totalSampleFrames * ss.preload.numChannels * bytesPerSample);
+
+        double durationSec = static_cast<double>(ss.preload.totalSampleFrames) / ss.preload.sampleRate;
+        engineDebugLog("  Loaded: " + ss.preload.name
+                      + " | " + juce::String(durationSec, 2) + "s"
+                      + " | preload=" + juce::String(framesToPreload) + " frames"
+                      + " | streaming=" + juce::String(ss.preload.needsStreaming() ? "YES" : "no"));
+
+        tempSamples.push_back(std::move(ss));
+    }
+
+    // Swap in new samples (thread-safe)
+    {
+        std::lock_guard<std::recursive_mutex> lock(mappingsMutex);
+        streamingSamples = std::move(tempSamples);
+    }
+
+    // Also build regular noteMappings for UI compatibility
+    std::map<int, NoteMapping> tempMappings;
+    for (const auto& ss : streamingSamples)
+    {
+        auto& noteMapping = tempMappings[ss.midiNote];
+        noteMapping.midiNote = ss.midiNote;
+
+        // Find or create velocity layer
+        auto it = std::find_if(noteMapping.velocityLayers.begin(), noteMapping.velocityLayers.end(),
+            [&ss](const VelocityLayer& layer) { return layer.velocityValue == ss.velocity; });
+
+        if (it == noteMapping.velocityLayers.end())
+        {
+            VelocityLayer newLayer;
+            newLayer.velocityValue = ss.velocity;
+            newLayer.roundRobinSamples.fill(nullptr);
+            noteMapping.velocityLayers.push_back(newLayer);
+        }
+    }
+
+    // Build velocity ranges
+    for (auto& [note, mapping] : tempMappings)
+    {
+        std::sort(mapping.velocityLayers.begin(), mapping.velocityLayers.end(),
+            [](const VelocityLayer& a, const VelocityLayer& b) {
+                return a.velocityValue < b.velocityValue;
+            });
+
+        for (size_t i = 0; i < mapping.velocityLayers.size(); ++i)
+        {
+            auto& layer = mapping.velocityLayers[i];
+            if (i == 0)
+                layer.velocityRangeStart = 1;
+            else
+                layer.velocityRangeStart = mapping.velocityLayers[i - 1].velocityValue + 1;
+            layer.velocityRangeEnd = layer.velocityValue;
+        }
+    }
+
+    // Build fallbacks
+    for (int n = 0; n < 128; ++n)
+    {
+        if (tempMappings.find(n) == tempMappings.end())
+        {
+            int fallback = -1;
+            for (int higher = n + 1; higher < 128; ++higher)
+            {
+                if (tempMappings.find(higher) != tempMappings.end())
+                {
+                    fallback = higher;
+                    break;
+                }
+            }
+            if (fallback >= 0)
+            {
+                tempMappings[n].midiNote = n;
+                tempMappings[n].fallbackNote = fallback;
+            }
+        }
+        else
+        {
+            tempMappings[n].fallbackNote = -1;
+        }
+    }
+
+    {
+        std::lock_guard<std::recursive_mutex> lock(mappingsMutex);
+        noteMappings = std::move(tempMappings);
+    }
+
+    // Store total file size
+    totalInstrumentFileSize = tempTotalSize;
+
+    engineDebugLog("=== STREAMING MODE SUMMARY ===");
+    engineDebugLog("  Total samples: " + juce::String(streamingSamples.size()));
+    engineDebugLog("  Total file size: " + juce::String(tempTotalSize / (1024 * 1024)) + " MB");
+    int streamingCount = 0;
+    for (const auto& ss : streamingSamples)
+        if (ss.preload.needsStreaming()) streamingCount++;
+    engineDebugLog("  Samples needing streaming: " + juce::String(streamingCount));
+    engineDebugLog("  Preload memory: " + juce::String(totalPreloadBytes / 1024) + " KB");
+    engineDebugLog("  Full memory (RAM mode): " + juce::String(totalFullBytes / 1024) + " KB");
+    engineDebugLog("  Memory savings: " + juce::String((totalFullBytes - totalPreloadBytes) / 1024) + " KB");
+    engineDebugLog("==============================");
+
+    loadingState = LoadingState::Loaded;
+}
+
+const SamplerEngine::StreamingSample* SamplerEngine::findStreamingSample(int midiNote, int velocity, int roundRobin) const
+{
+    // First check if we need to use a fallback note
+    int actualNote = midiNote;
+    auto it = noteMappings.find(midiNote);
+    if (it != noteMappings.end() && it->second.fallbackNote >= 0)
+    {
+        actualNote = it->second.fallbackNote;
+    }
+
+    // Find matching streaming sample
+    for (const auto& ss : streamingSamples)
+    {
+        if (ss.midiNote != actualNote)
+            continue;
+
+        // Check velocity range
+        auto noteIt = noteMappings.find(actualNote);
+        if (noteIt == noteMappings.end())
+            continue;
+
+        for (const auto& layer : noteIt->second.velocityLayers)
+        {
+            if (velocity >= layer.velocityRangeStart && velocity <= layer.velocityRangeEnd)
+            {
+                if (layer.velocityValue == ss.velocity)
+                {
+                    // Check round-robin
+                    if (ss.roundRobin == roundRobin)
+                        return &ss;
+
+                    // Fallback: return any matching sample
+                    return &ss;
+                }
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+void SamplerEngine::noteOnStreaming(int midiNote, int velocity, int roundRobin)
+{
+    const StreamingSample* ss = findStreamingSample(midiNote, velocity, roundRobin);
+    if (!ss)
+    {
+        engineDebugLog("noteOnStreaming: No sample found for note=" + juce::String(midiNote)
+                      + " vel=" + juce::String(velocity) + " rr=" + juce::String(roundRobin));
+        return;
+    }
+
+    // Find a free streaming voice
+    for (size_t i = 0; i < streamingVoices.size(); ++i)
+    {
+        if (!streamingVoices[i].isActive())
+        {
+            // Set ADSR parameters
+            juce::ADSR::Parameters adsrJuceParams;
+            adsrJuceParams.attack = adsrParams.attack;
+            adsrJuceParams.decay = adsrParams.decay;
+            adsrJuceParams.sustain = adsrParams.sustain;
+            adsrJuceParams.release = adsrParams.release;
+            streamingVoices[i].setADSRParameters(adsrJuceParams);
+
+            streamingVoices[i].startVoice(&ss->preload, midiNote,
+                                           static_cast<float>(velocity) / 127.0f, currentSampleRate);
+
+            engineDebugLog("noteOnStreaming: Started voice " + juce::String(i)
+                          + " for note=" + juce::String(midiNote)
+                          + " sample=" + ss->preload.name
+                          + " streaming=" + juce::String(ss->preload.needsStreaming() ? "YES" : "no"));
+            return;
+        }
+    }
+
+    // No free voice - steal the first one
+    juce::ADSR::Parameters adsrJuceParams;
+    adsrJuceParams.attack = adsrParams.attack;
+    adsrJuceParams.decay = adsrParams.decay;
+    adsrJuceParams.sustain = adsrParams.sustain;
+    adsrJuceParams.release = adsrParams.release;
+    streamingVoices[0].setADSRParameters(adsrJuceParams);
+    streamingVoices[0].stopVoice(false);
+    streamingVoices[0].startVoice(&ss->preload, midiNote,
+                                   static_cast<float>(velocity) / 127.0f, currentSampleRate);
+}
+
+void SamplerEngine::noteOffStreaming(int midiNote)
+{
+    for (auto& voice : streamingVoices)
+    {
+        if (voice.isActive() && voice.getPlayingNote() == midiNote)
+        {
+            voice.stopVoice(true);  // Allow tail off
+        }
+    }
+}
+
+void SamplerEngine::processBlockStreaming(juce::AudioBuffer<float>& buffer)
+{
+    const int numSamples = buffer.getNumSamples();
+
+    // Update ADSR for all streaming voices
+    juce::ADSR::Parameters adsrJuceParams;
+    adsrJuceParams.attack = adsrParams.attack;
+    adsrJuceParams.decay = adsrParams.decay;
+    adsrJuceParams.sustain = adsrParams.sustain;
+    adsrJuceParams.release = adsrParams.release;
+
+    for (auto& voice : streamingVoices)
+    {
+        voice.setADSRParameters(adsrJuceParams);
+
+        if (voice.isActive())
+        {
+            voice.renderNextBlock(buffer, 0, numSamples);
         }
     }
 }
