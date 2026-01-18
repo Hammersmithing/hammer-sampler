@@ -599,11 +599,10 @@ void SamplerEngine::noteOn(int midiNote, int velocity, int roundRobin)
     if (!sample)
         return;
 
-    // Calculate pitch ratio: how much to shift to go from actualSampleNote to midiNote
-    // If midiNote < actualSampleNote, we need to pitch DOWN (ratio < 1.0)
-    // Formula: ratio = 2^((midiNote - actualSampleNote) / 12)
+    // Calculate pitch ratio: combines sample rate conversion and pitch shift
+    double sampleRateRatio = sample->sampleRate / currentSampleRate;
     int semitoneDiff = midiNote - actualSampleNote;
-    double pitchRatio = std::pow(2.0, semitoneDiff / 12.0);
+    double pitchRatio = sampleRateRatio * std::pow(2.0, semitoneDiff / 12.0);
 
     // Find a free voice or steal the oldest one
     Voice* voiceToUse = nullptr;
