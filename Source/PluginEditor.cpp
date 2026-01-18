@@ -320,6 +320,12 @@ MidiKeyboardEditor::MidiKeyboardEditor(MidiKeyboardProcessor& p)
     preloadMemLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
     preloadMemLabel.setJustificationType(juce::Justification::centredRight);
 
+    // Voice activity label
+    addAndMakeVisible(voiceActivityLabel);
+    voiceActivityLabel.setFont(juce::FontOptions(12.0f));
+    voiceActivityLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    voiceActivityLabel.setJustificationType(juce::Justification::centredRight);
+
     // Preload size slider (only shown for streaming mode)
     preloadSlider.setSliderStyle(juce::Slider::RotaryVerticalDrag);
     preloadSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 15);
@@ -391,6 +397,25 @@ void MidiKeyboardEditor::timerCallback()
             pendingLoadFolder.clear();
         }
         // else still loading, keep showing "Loading..."
+    }
+
+    // Always update voice activity (real-time)
+    if (processorRef.areSamplesLoaded())
+    {
+        int activeVoices = processorRef.getActiveVoiceCount();
+        if (processorRef.isStreamingEnabled())
+        {
+            int streamingVoices = processorRef.getStreamingVoiceCount();
+            voiceActivityLabel.setText("Voices: " + juce::String(activeVoices) + " | Disk: " + juce::String(streamingVoices), juce::dontSendNotification);
+        }
+        else
+        {
+            voiceActivityLabel.setText("Voices: " + juce::String(activeVoices), juce::dontSendNotification);
+        }
+    }
+    else
+    {
+        voiceActivityLabel.setText("", juce::dontSendNotification);
     }
 }
 
@@ -488,7 +513,9 @@ void MidiKeyboardEditor::resized()
     loadButton.setBounds(controlsArea.removeFromLeft(120));
     controlsArea.removeFromLeft(10);
 
-    // Preload RAM and file size on the right
+    // Voice activity, preload RAM, and file size on the right
+    voiceActivityLabel.setBounds(controlsArea.removeFromRight(120));
+    controlsArea.removeFromRight(5);
     preloadMemLabel.setBounds(controlsArea.removeFromRight(90));
     controlsArea.removeFromRight(5);
     fileSizeLabel.setBounds(controlsArea.removeFromRight(100));

@@ -82,6 +82,10 @@ public:
     int getPreloadSizeKB() const { return preloadSizeKB; }
     void setPreloadSizeKB(int sizeKB) { preloadSizeKB = juce::jlimit(32, 1024, sizeKB); }
 
+    // Streaming activity info (for UI)
+    int getActiveVoiceCount() const;
+    int getStreamingVoiceCount() const;  // Voices actively reading from disk
+
     // Query sample configuration for UI
     bool isNoteAvailable(int midiNote) const;  // Has samples or valid fallback
     bool noteHasOwnSamples(int midiNote) const;  // Has its own samples (not fallback)

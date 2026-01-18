@@ -65,6 +65,7 @@ private:
     // Instrument info
     juce::Label fileSizeLabel;
     juce::Label preloadMemLabel;
+    juce::Label voiceActivityLabel;
 
     // Preload size control
     juce::Slider preloadSlider;

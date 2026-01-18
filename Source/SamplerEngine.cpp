@@ -1128,3 +1128,39 @@ void SamplerEngine::processBlockStreaming(juce::AudioBuffer<float>& buffer)
         }
     }
 }
+
+int SamplerEngine::getActiveVoiceCount() const
+{
+    if (!streamingEnabled)
+    {
+        int count = 0;
+        for (const auto& voice : voices)
+        {
+            if (voice.active)
+                ++count;
+        }
+        return count;
+    }
+
+    int count = 0;
+    for (const auto& voice : streamingVoices)
+    {
+        if (voice.isActive())
+            ++count;
+    }
+    return count;
+}
+
+int SamplerEngine::getStreamingVoiceCount() const
+{
+    if (!streamingEnabled)
+        return 0;
+
+    int count = 0;
+    for (const auto& voice : streamingVoices)
+    {
+        if (voice.isActive() && voice.needsMoreData())
+            ++count;
+    }
+    return count;
+}
