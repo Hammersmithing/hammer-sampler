@@ -221,6 +221,192 @@ Piano Samples/
 ...
 ```
 
+---
+
+# Roadmap: Disk Streaming (DFD)
+
+## Why Disk Streaming?
+
+The current implementation loads all samples into RAM. This works well for small-to-medium libraries but has limitations:
+
+| Scenario | Full RAM Loading | Feasible? |
+|----------|------------------|-----------|
+| Single instance, 500MB library | 500MB RAM | ✅ Yes |
+| Single instance, 4GB library | 4GB RAM | ⚠️ Borderline |
+| 100 instances, 500MB each | 50GB RAM | ❌ No |
+| Hundreds of GB across templates | 100GB+ RAM | ❌ Impossible |
+
+**Target use case:** Reaper templates with hundreds of sampler instances and hundreds of GB of sample data. This requires a fundamentally different approach.
+
+## Solution: Direct From Disk (DFD) Streaming
+
+Similar to Kontakt's approach, we'll implement hybrid streaming:
+
+1. **Preload**: Keep only the first ~64KB of each sample in RAM (covers the attack)
+2. **Stream**: Read the rest from disk in real-time during playback
+3. **Buffer ahead**: Stay ahead of playback position to prevent dropouts
+
+### RAM Usage Comparison
+
+| Library Size | Full RAM | DFD (64KB preload) | Reduction |
+|--------------|----------|-------------------|-----------|
+| 1 GB (1000 samples) | 1 GB | ~64 MB | 94% less |
+| 10 GB (5000 samples) | 10 GB | ~320 MB | 97% less |
+| 100 GB (50000 samples) | Impossible | ~3.2 GB | ✅ Viable |
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         SamplerEngine                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │                    PreloadCache                          │    │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐        │    │
+│  │  │Sample 1 │ │Sample 2 │ │Sample 3 │ │Sample N │  ...   │    │
+│  │  │[64KB]   │ │[64KB]   │ │[64KB]   │ │[64KB]   │        │    │
+│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘        │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │                  StreamingVoices                         │    │
+│  │                                                          │    │
+│  │  Voice 1: [preload████] → [stream buffer ░░░░░░░░░░]    │    │
+│  │  Voice 2: [preload████] → [stream buffer ░░░░░░░░░░]    │    │
+│  │  Voice 3: [preload████] → [stream buffer ░░░░░░░░░░]    │    │
+│  │                                                          │    │
+│  │  ████ = in RAM    ░░░░ = streaming from disk             │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                              ↑                                   │
+│                              │ lock-free ring buffer             │
+│                              ↓                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │                    DiskStreamer                          │    │
+│  │                  (background thread)                     │    │
+│  │                                                          │    │
+│  │  • Monitors active voices                                │    │
+│  │  • Reads ahead from disk                                 │    │
+│  │  • Fills streaming buffers                               │    │
+│  │  • Prioritizes voices running low on data                │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                              ↓                                   │
+│                         [DISK I/O]                               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Implementation Plan
+
+### Phase 1: Core Infrastructure
+- [ ] Create `StreamingVoice` class with ring buffer
+- [ ] Create `DiskStreamer` background thread
+- [ ] Implement lock-free communication queue
+- [ ] Modify sample loading to only preload first N bytes
+
+### Phase 2: Playback Integration
+- [ ] Modify `noteOn()` to use streaming voices
+- [ ] Implement seamless transition from preload to stream
+- [ ] Handle voice stealing with active streams
+- [ ] Add buffer underrun detection
+
+### Phase 3: Optimization
+- [ ] Voice prioritization (which streams to fill first)
+- [ ] Configurable preload size
+- [ ] Configurable streaming buffer size
+- [ ] Disk throughput monitoring
+
+### Phase 4: Robustness
+- [ ] Graceful degradation when disk can't keep up
+- [ ] Error handling for disk failures
+- [ ] Polyphony limiting based on disk speed
+- [ ] SSD vs HDD detection and tuning
+
+## Technical Details
+
+### Thread Safety Requirements
+
+The **audio thread** (where `processBlock` runs) is real-time and must NEVER:
+- Allocate/deallocate memory
+- Lock mutexes (could cause priority inversion)
+- Wait for disk I/O
+- Make system calls
+
+Therefore, communication between audio thread and disk thread must be **lock-free**:
+
+```cpp
+// Audio thread: "I need more data for voice 5"
+streamRequestQueue.push({voiceId: 5, samplesNeeded: 4096});
+
+// Disk thread: reads and fills buffer
+// Audio thread: reads from buffer (lock-free)
+```
+
+### Key Data Structures
+
+```cpp
+struct PreloadedSample
+{
+    juce::AudioBuffer<float> preloadBuffer;  // First 64KB
+    juce::File sourceFile;                    // Path for streaming
+    int64_t totalSamples;                     // Full sample length
+    double sampleRate;
+};
+
+struct StreamingVoice
+{
+    PreloadedSample* sample;
+    int64_t playPosition;           // Current position in full sample
+
+    // Lock-free ring buffer for streamed data
+    std::atomic<int64_t> writePos;  // Disk thread writes here
+    std::atomic<int64_t> readPos;   // Audio thread reads here
+    juce::AudioBuffer<float> ringBuffer;
+
+    // State
+    bool needsMoreData() const;
+    int64_t samplesAvailable() const;
+};
+```
+
+### Preload Size Considerations
+
+| Preload Size | Attack Coverage | RAM per Sample | Notes |
+|--------------|-----------------|----------------|-------|
+| 32 KB | ~0.18s @ 44.1kHz stereo | 32 KB | Risky for slow disks |
+| 64 KB | ~0.36s @ 44.1kHz stereo | 64 KB | Good default |
+| 128 KB | ~0.72s @ 44.1kHz stereo | 128 KB | Safe for HDD |
+| 256 KB | ~1.45s @ 44.1kHz stereo | 256 KB | Very safe |
+
+*Calculation: 44100 Hz × 2 channels × 4 bytes × seconds = bytes*
+
+### Streaming Buffer Size
+
+The streaming buffer must be large enough to handle:
+- Disk seek time (up to 10ms for HDD, <1ms for SSD)
+- Read latency
+- Audio buffer size (typically 256-2048 samples)
+
+Recommended: **64KB - 256KB per voice** depending on disk speed.
+
+### Maximum Polyphony
+
+Disk throughput limits maximum simultaneous voices:
+
+| Disk Type | Read Speed | Max Voices (conservative) |
+|-----------|------------|---------------------------|
+| HDD | ~100 MB/s | ~50 voices |
+| SATA SSD | ~500 MB/s | ~200 voices |
+| NVMe SSD | ~3000 MB/s | ~500+ voices |
+
+*Based on 44.1kHz stereo float (~350KB/s per voice)*
+
+## Current Status
+
+**Version:** MVP (Full RAM loading)
+**Next milestone:** Phase 1 - Core Infrastructure
+
+---
+
 ## Author
 
 ALDENHammersmith
