@@ -8,6 +8,7 @@
 #include <atomic>
 #include <thread>
 #include <mutex>
+#include <future>
 
 struct Sample
 {

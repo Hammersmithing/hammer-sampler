@@ -269,56 +269,89 @@ void SamplerEngine::loadSamplesInBackground(const juce::String& folderPath)
     // Create temporary mappings
     std::map<int, NoteMapping> tempMappings;
 
-    // Create a local format manager for this thread
-    juce::AudioFormatManager threadFormatManager;
-    threadFormatManager.registerBasicFormats();
-
     // Find all audio files
     juce::Array<juce::File> audioFiles;
     folder.findChildFiles(audioFiles, juce::File::findFiles, false, "*.wav;*.aif;*.aiff;*.flac;*.mp3");
 
+    // Structure to hold loaded sample data
+    struct LoadedSample
+    {
+        std::shared_ptr<Sample> sample;
+        int note;
+        int velocity;
+        int roundRobin;
+    };
+
+    // Parse filenames first (fast) and prepare load tasks
+    std::vector<std::pair<juce::File, std::tuple<int, int, int>>> filesToLoad;
     for (const auto& file : audioFiles)
     {
         int note, velocity, roundRobin;
-        if (!parseFileName(file.getFileName(), note, velocity, roundRobin))
+        if (parseFileName(file.getFileName(), note, velocity, roundRobin))
+        {
+            filesToLoad.push_back({file, {note, velocity, roundRobin}});
+        }
+    }
+
+    // Load samples in parallel using std::async
+    std::vector<std::future<LoadedSample>> futures;
+    futures.reserve(filesToLoad.size());
+
+    for (const auto& [file, params] : filesToLoad)
+    {
+        auto [note, velocity, roundRobin] = params;
+
+        futures.push_back(std::async(std::launch::async, [file, note, velocity, roundRobin]() -> LoadedSample {
+            // Each thread gets its own format manager
+            juce::AudioFormatManager localFormatManager;
+            localFormatManager.registerBasicFormats();
+
+            std::unique_ptr<juce::AudioFormatReader> reader(localFormatManager.createReaderFor(file));
+            if (!reader)
+                return {nullptr, note, velocity, roundRobin};
+
+            auto sample = std::make_shared<Sample>();
+            sample->midiNote = note;
+            sample->velocity = velocity;
+            sample->roundRobin = roundRobin;
+            sample->sampleRate = reader->sampleRate;
+
+            // Read audio data
+            sample->buffer.setSize(static_cast<int>(reader->numChannels), static_cast<int>(reader->lengthInSamples));
+            reader->read(&sample->buffer, 0, static_cast<int>(reader->lengthInSamples), 0, true, true);
+
+            return {sample, note, velocity, roundRobin};
+        }));
+    }
+
+    // Collect results from all futures
+    for (auto& future : futures)
+    {
+        auto loaded = future.get();
+        if (!loaded.sample)
             continue;
-
-        // Load the audio file
-        std::unique_ptr<juce::AudioFormatReader> reader(threadFormatManager.createReaderFor(file));
-        if (!reader)
-            continue;
-
-        auto sample = std::make_shared<Sample>();
-        sample->midiNote = note;
-        sample->velocity = velocity;
-        sample->roundRobin = roundRobin;
-        sample->sampleRate = reader->sampleRate;
-
-        // Read audio data
-        sample->buffer.setSize(static_cast<int>(reader->numChannels), static_cast<int>(reader->lengthInSamples));
-        reader->read(&sample->buffer, 0, static_cast<int>(reader->lengthInSamples), 0, true, true);
 
         // Add to temp mappings
-        auto& noteMapping = tempMappings[note];
-        noteMapping.midiNote = note;
+        auto& noteMapping = tempMappings[loaded.note];
+        noteMapping.midiNote = loaded.note;
 
         // Find or create velocity layer
         auto it = std::find_if(noteMapping.velocityLayers.begin(), noteMapping.velocityLayers.end(),
-            [velocity](const VelocityLayer& layer) { return layer.velocityValue == velocity; });
+            [&loaded](const VelocityLayer& layer) { return layer.velocityValue == loaded.velocity; });
 
         if (it == noteMapping.velocityLayers.end())
         {
             VelocityLayer newLayer;
-            newLayer.velocityValue = velocity;
+            newLayer.velocityValue = loaded.velocity;
             newLayer.roundRobinSamples.fill(nullptr);
             noteMapping.velocityLayers.push_back(newLayer);
             it = noteMapping.velocityLayers.end() - 1;
         }
 
         // Add sample to round-robin slot
-        if (roundRobin >= 1 && roundRobin <= 3)
+        if (loaded.roundRobin >= 1 && loaded.roundRobin <= 3)
         {
-            it->roundRobinSamples[static_cast<size_t>(roundRobin)] = sample;
+            it->roundRobinSamples[static_cast<size_t>(loaded.roundRobin)] = loaded.sample;
         }
     }
 
