@@ -1,17 +1,19 @@
 # MIDI Keyboard Display & Sampler
 
-A JUCE-based VST3/AU plugin that displays MIDI input on a visual 88-key keyboard and plays back samples mapped to notes, velocities, and round-robin positions. This is an MVP sampler designed for quick sample auditioning and performance.
+A JUCE-based VST3/AU plugin that displays MIDI input on a visual 88-key keyboard and plays back samples using Direct From Disk (DFD) streaming. Designed for large sample libraries (100GB+) that exceed available RAM.
 
 ## Features
 
-- **Full 88-key piano display** (A0-C8) with octave labels (C1-C8) and sample availability coloring
+- **DFD Streaming Architecture** - Preload buffers + real-time disk streaming enables massive libraries
+- **Full 88-key piano display** (A0-C8) with octave labels and sample availability coloring
 - **DAW project state persistence** - samples and settings auto-reload when you reopen a project
 - **Async sample loading** - projects load instantly, samples load in background thread
 - Dynamic per-note grid showing velocity layers and round-robin positions
-- Sample playback with velocity layers and round-robin cycling
+- Sample playback with velocity layers and round-robin cycling (up to 180 voices)
 - Pitch-shifting for notes using fallback samples
 - Global ADSR envelope controls
 - Sustain pedal support with visual feedback
+- Same-note voice stealing with 10ms crossfade
 
 ## Sample Folder Setup
 
@@ -127,6 +129,7 @@ Four rotary knobs control the global amplitude envelope:
 The plugin saves its state when your DAW project is saved, including:
 - **Sample folder path** - automatically reloads samples when project opens
 - **ADSR envelope settings** - attack, decay, sustain, release values
+- **Preload size** - streaming buffer configuration
 
 This means you can close a project and reopen it later with all your samples and settings intact.
 
@@ -140,7 +143,8 @@ State is stored as XML with the following structure:
 ```xml
 <MidiKeyboardState sampleFolder="/path/to/samples"
                    attack="0.01" decay="0.1"
-                   sustain="0.7" release="0.3"/>
+                   sustain="0.7" release="0.3"
+                   preloadSizeKB="64"/>
 ```
 
 ## Async Sample Loading
@@ -148,78 +152,9 @@ State is stored as XML with the following structure:
 To prevent DAW projects from freezing during load, samples are loaded asynchronously:
 
 1. **Project opens instantly** - `setStateInformation()` returns immediately
-2. **Background thread** - samples load on a separate thread
+2. **Background thread** - preload buffers load on a separate thread
 3. **Non-blocking** - you can interact with your DAW while samples load
 4. **Thread-safe** - sample mappings are swapped atomically when ready
-
-### Parallel Loading
-
-For maximum speed, samples are loaded in parallel using `std::async`:
-
-```cpp
-// Each sample file loads on its own thread simultaneously
-for (const auto& file : filesToLoad)
-{
-    futures.push_back(std::async(std::launch::async, [file]() {
-        // Load audio file in parallel
-        return loadedSample;
-    }));
-}
-```
-
-**Performance impact:**
-- Sequential loading: ~20 seconds for large libraries
-- Parallel loading: ~5 seconds (4x faster)
-
-The number of concurrent loads scales with your CPU cores, maximizing disk I/O throughput.
-
-## Building
-
-Requires JUCE framework installed at `~/JUCE`.
-
-```bash
-mkdir build && cd build
-cmake ..
-cmake --build . --config Release
-```
-
-Output plugins are in `build/MidiKeyboardDisplay_artefacts/Release/`:
-- `VST3/MIDI Keyboard Display.vst3`
-- `AU/MIDI Keyboard Display.component`
-- `Standalone/MIDI Keyboard Display.app`
-
-### Installation
-
-Copy the built plugin to your system plugin folder:
-
-**macOS:**
-```bash
-# VST3
-cp -R build/MidiKeyboardDisplay_artefacts/Release/VST3/*.vst3 ~/Library/Audio/Plug-Ins/VST3/
-
-# AU
-cp -R build/MidiKeyboardDisplay_artefacts/Release/AU/*.component ~/Library/Audio/Plug-Ins/Components/
-```
-
-## Example Sample Library Structure
-
-```
-Piano Samples/
-├── A0_040_01_piano.wav
-├── A0_040_02_piano.wav
-├── A0_040_03_piano.wav
-├── A0_080_01_piano.wav
-├── A0_080_02_piano.wav
-├── A0_080_03_piano.wav
-├── A0_100_01_piano.wav
-├── A0_100_02_piano.wav
-├── A0_100_03_piano.wav
-├── A0_127_01_piano.wav
-├── A0_127_02_piano.wav
-├── A0_127_03_piano.wav
-├── C1_040_01_piano.wav
-...
-```
 
 ---
 
@@ -227,19 +162,15 @@ Piano Samples/
 
 ## Overview
 
-The sampler supports two modes:
-- **RAM Mode**: Full samples loaded into memory (original behavior)
-- **Streaming Mode**: Only preload buffers in RAM, rest streamed from disk
+The sampler uses Direct From Disk streaming to enable massive sample libraries (100GB+) that would never fit in RAM. Only the beginning of each sample is preloaded into memory - the rest is streamed from disk in real-time as notes play.
 
-Toggle between modes with the **Streaming** checkbox. Streaming mode enables massive sample libraries (100GB+) that would never fit in RAM.
+### RAM Usage
 
-### RAM Usage Comparison
-
-| Library Size | RAM Mode | Streaming (64KB preload) | Reduction |
-|--------------|----------|--------------------------|-----------|
-| 1 GB (1000 samples) | 1 GB | ~64 MB | 94% less |
-| 10 GB (5000 samples) | 10 GB | ~320 MB | 97% less |
-| 100 GB (50000 samples) | Impossible | ~3.2 GB | ✅ Viable |
+| Library Size | Samples | Preload Memory (64KB) |
+|--------------|---------|----------------------|
+| 1 GB | ~1000 | ~64 MB |
+| 10 GB | ~5000 | ~320 MB |
+| 100 GB | ~50000 | ~3.2 GB |
 
 ## Architecture
 
@@ -322,10 +253,6 @@ When available audio drops below the low watermark (8,192 frames), the voice sig
 
 ## UI Controls
 
-### Streaming Toggle
-- **Off**: RAM mode - full samples in memory
-- **On**: Streaming mode - preload + disk streaming
-
 ### Preload Knob (32KB - 1024KB)
 Controls how much of each sample is preloaded into RAM.
 
@@ -342,9 +269,10 @@ Smaller preload = less RAM, but more reliance on disk speed.
 
 ### Info Display
 - **Size**: Total instrument file size on disk
-- **RAM**: Memory used by preload buffers (streaming mode)
-- **Voices**: Number of active voices playing
-- **Disk**: Voices currently requesting disk reads
+- **RAM**: Memory used by preload buffers
+- **Voices**: Active / Streaming voice counts
+- **Disk**: Disk throughput in MB/s
+- **Underruns**: Count of buffer underruns (click to reset)
 
 ## Thread Safety
 
@@ -374,6 +302,56 @@ No mutexes in the audio path = no priority inversion = no glitches.
 2. **Match sample rates** - 96kHz samples use 2x the bandwidth of 44.1kHz
 3. **Increase preload** if you hear clicks on note attacks
 4. **Reduce polyphony** if disk can't keep up
+
+---
+
+## Building
+
+Requires JUCE framework installed at `~/JUCE`.
+
+```bash
+mkdir build && cd build
+cmake ..
+cmake --build . --config Release
+```
+
+Output plugins are in `build/MidiKeyboardDisplay_artefacts/Release/`:
+- `VST3/MIDI Keyboard Display.vst3`
+- `AU/MIDI Keyboard Display.component`
+- `Standalone/MIDI Keyboard Display.app`
+
+### Installation
+
+Copy the built plugin to your system plugin folder:
+
+**macOS:**
+```bash
+# VST3
+cp -R build/MidiKeyboardDisplay_artefacts/Release/VST3/*.vst3 ~/Library/Audio/Plug-Ins/VST3/
+
+# AU
+cp -R build/MidiKeyboardDisplay_artefacts/Release/AU/*.component ~/Library/Audio/Plug-Ins/Components/
+```
+
+## Example Sample Library Structure
+
+```
+Piano Samples/
+├── A0_040_01_piano.wav
+├── A0_040_02_piano.wav
+├── A0_040_03_piano.wav
+├── A0_080_01_piano.wav
+├── A0_080_02_piano.wav
+├── A0_080_03_piano.wav
+├── A0_100_01_piano.wav
+├── A0_100_02_piano.wav
+├── A0_100_03_piano.wav
+├── A0_127_01_piano.wav
+├── A0_127_02_piano.wav
+├── A0_127_03_piano.wav
+├── C1_040_01_piano.wav
+...
+```
 
 ---
 
