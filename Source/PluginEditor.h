@@ -66,6 +66,7 @@ private:
     juce::Label fileSizeLabel;
     juce::Label preloadMemLabel;
     juce::Label voiceActivityLabel;
+    juce::Label throughputLabel;
 
     // Preload size control
     juce::Slider preloadSlider;

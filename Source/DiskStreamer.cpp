@@ -63,6 +63,7 @@ void DiskStreamer::run()
     streamDebugLog(">>> DiskStreamer thread STARTED");
     int loopCount = 0;
     int lastActiveVoices = 0;
+    lastThroughputTime = juce::Time::getMillisecondCounterHiRes();
 
     while (!threadShouldExit())
     {
@@ -86,11 +87,24 @@ void DiskStreamer::run()
             }
         }
 
-        // Log heartbeat and voice count changes
-        if (loopCount % 200 == 0)  // Every ~1 second at 5ms polling
+        // Calculate throughput every ~1 second (200 loops at 5ms each)
+        if (loopCount % 200 == 0)
         {
+            double currentTime = juce::Time::getMillisecondCounterHiRes();
+            double elapsedMs = currentTime - lastThroughputTime;
+
+            if (elapsedMs > 0)
+            {
+                int64_t bytesInWindow = bytesReadInWindow.exchange(0, std::memory_order_relaxed);
+                float mbps = static_cast<float>(bytesInWindow) / (elapsedMs * 1000.0f);  // bytes/ms -> MB/s
+                currentThroughputMBps.store(mbps, std::memory_order_relaxed);
+            }
+
+            lastThroughputTime = currentTime;
+
             streamDebugLog("DiskStreamer heartbeat: loop=" + juce::String(loopCount)
-                          + " activeVoices=" + juce::String(activeVoices));
+                          + " activeVoices=" + juce::String(activeVoices)
+                          + " throughput=" + juce::String(currentThroughputMBps.load(), 2) + " MB/s");
         }
         else if (activeVoices != lastActiveVoices)
         {
@@ -177,6 +191,11 @@ void DiskStreamer::fillVoiceBuffer(int voiceIndex)
             voice->setReadError(true);
             break;
         }
+
+        // Track bytes read for throughput calculation
+        int64_t bytesRead = static_cast<int64_t>(framesToRead) * sample->numChannels * sizeof(float);
+        bytesReadInWindow.fetch_add(bytesRead, std::memory_order_relaxed);
+        totalBytesRead.fetch_add(bytesRead, std::memory_order_relaxed);
 
         // Copy to voice's ring buffer
         int writePos = voice->getWritePosition();

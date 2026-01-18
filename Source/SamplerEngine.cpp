@@ -834,6 +834,18 @@ void SamplerEngine::loadSamplesStreamingInBackground(const juce::String& folderP
 {
     engineDebugLog("Loading samples in STREAMING mode from: " + folderPath);
 
+    // IMPORTANT: Stop all streaming voices and unregister from DiskStreamer
+    // before replacing sample data to prevent race condition crashes
+    for (int i = 0; i < StreamingConstants::maxStreamingVoices; ++i)
+    {
+        streamingVoices[static_cast<size_t>(i)].stopVoice(false);
+        if (diskStreamer)
+            diskStreamer->unregisterVoice(i);
+    }
+
+    // Give DiskStreamer time to finish any in-progress operations
+    juce::Thread::sleep(20);
+
     juce::File folder(folderPath);
 
     // Clear previous streaming samples
@@ -1005,6 +1017,16 @@ void SamplerEngine::loadSamplesStreamingInBackground(const juce::String& folderP
     engineDebugLog("  Memory savings: " + juce::String((totalFullBytes - totalPreloadBytes) / 1024) + " KB");
     engineDebugLog("==============================");
 
+    // Re-register voices with DiskStreamer after loading
+    if (diskStreamer)
+    {
+        for (int i = 0; i < StreamingConstants::maxStreamingVoices; ++i)
+        {
+            diskStreamer->registerVoice(i, &streamingVoices[static_cast<size_t>(i)]);
+        }
+        engineDebugLog("Re-registered " + juce::String(StreamingConstants::maxStreamingVoices) + " voices with DiskStreamer");
+    }
+
     loadingState = LoadingState::Loaded;
 }
 
@@ -1162,4 +1184,12 @@ int SamplerEngine::getStreamingVoiceCount() const
             ++count;
     }
     return count;
+}
+
+float SamplerEngine::getDiskThroughputMBps() const
+{
+    if (!streamingEnabled || !diskStreamer)
+        return 0.0f;
+
+    return diskStreamer->getThroughputMBps();
 }

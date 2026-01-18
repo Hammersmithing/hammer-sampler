@@ -38,6 +38,12 @@ public:
     /** Set the audio format manager for creating file readers */
     void setAudioFormatManager(juce::AudioFormatManager* manager) { formatManager = manager; }
 
+    /** Get current disk throughput in MB/s (averaged over ~1 second) */
+    float getThroughputMBps() const { return currentThroughputMBps.load(std::memory_order_relaxed); }
+
+    /** Get total bytes read since last reset */
+    int64_t getTotalBytesRead() const { return totalBytesRead.load(std::memory_order_relaxed); }
+
 private:
     void run() override;
 
@@ -64,4 +70,10 @@ private:
 
     // Audio format manager (owned by processor, we just hold a pointer)
     juce::AudioFormatManager* formatManager = nullptr;
+
+    // Throughput tracking
+    std::atomic<int64_t> bytesReadInWindow{0};      // Bytes read in current measurement window
+    std::atomic<int64_t> totalBytesRead{0};         // Total bytes read since start
+    std::atomic<float> currentThroughputMBps{0.0f}; // Current throughput in MB/s
+    double lastThroughputTime = 0.0;                // Time of last throughput calculation
 };

@@ -31,6 +31,7 @@ public:
     void setPreloadSizeKB(int sizeKB) { samplerEngine.setPreloadSizeKB(sizeKB); }
     int getActiveVoiceCount() const { return samplerEngine.getActiveVoiceCount(); }
     int getStreamingVoiceCount() const { return samplerEngine.getStreamingVoiceCount(); }
+    float getDiskThroughputMBps() const { return samplerEngine.getDiskThroughputMBps(); }
 
     // ADSR controls
     void setADSR(float attack, float decay, float sustain, float release);

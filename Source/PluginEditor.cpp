@@ -326,6 +326,12 @@ MidiKeyboardEditor::MidiKeyboardEditor(MidiKeyboardProcessor& p)
     voiceActivityLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
     voiceActivityLabel.setJustificationType(juce::Justification::centredRight);
 
+    // Throughput label (for streaming mode)
+    addAndMakeVisible(throughputLabel);
+    throughputLabel.setFont(juce::FontOptions(12.0f));
+    throughputLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    throughputLabel.setJustificationType(juce::Justification::centredRight);
+
     // Preload size slider (only shown for streaming mode)
     preloadSlider.setSliderStyle(juce::Slider::RotaryVerticalDrag);
     preloadSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 15);
@@ -407,15 +413,21 @@ void MidiKeyboardEditor::timerCallback()
         {
             int streamingVoices = processorRef.getStreamingVoiceCount();
             voiceActivityLabel.setText("Voices: " + juce::String(activeVoices) + " | Disk: " + juce::String(streamingVoices), juce::dontSendNotification);
+
+            // Show disk throughput
+            float throughput = processorRef.getDiskThroughputMBps();
+            throughputLabel.setText(juce::String(throughput, 1) + " MB/s", juce::dontSendNotification);
         }
         else
         {
             voiceActivityLabel.setText("Voices: " + juce::String(activeVoices), juce::dontSendNotification);
+            throughputLabel.setText("", juce::dontSendNotification);
         }
     }
     else
     {
         voiceActivityLabel.setText("", juce::dontSendNotification);
+        throughputLabel.setText("", juce::dontSendNotification);
     }
 }
 
@@ -513,7 +525,9 @@ void MidiKeyboardEditor::resized()
     loadButton.setBounds(controlsArea.removeFromLeft(120));
     controlsArea.removeFromLeft(10);
 
-    // Voice activity, preload RAM, and file size on the right
+    // Voice activity, throughput, preload RAM, and file size on the right
+    throughputLabel.setBounds(controlsArea.removeFromRight(70));
+    controlsArea.removeFromRight(5);
     voiceActivityLabel.setBounds(controlsArea.removeFromRight(120));
     controlsArea.removeFromRight(5);
     preloadMemLabel.setBounds(controlsArea.removeFromRight(90));
