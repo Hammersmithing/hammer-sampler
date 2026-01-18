@@ -145,6 +145,10 @@ void MidiKeyboardProcessor::getStateInformation(juce::MemoryBlock& destData)
     xml.setAttribute("sustain", adsr.sustain);
     xml.setAttribute("release", adsr.release);
 
+    // Save streaming settings
+    xml.setAttribute("streamingEnabled", isStreamingEnabled());
+    xml.setAttribute("preloadSizeKB", getPreloadSizeKB());
+
     copyXmlToBinary(xml, destData);
 }
 
@@ -162,14 +166,23 @@ void MidiKeyboardProcessor::setStateInformation(const void* data, int sizeInByte
         float release = static_cast<float>(xml->getDoubleAttribute("release", 0.3));
         setADSR(attack, decay, sustain, release);
 
-        // Restore sample folder
+        // Restore streaming settings
+        bool streamingEnabled = xml->getBoolAttribute("streamingEnabled", false);
+        int preloadSizeKB = xml->getIntAttribute("preloadSizeKB", 64);
+        setStreamingEnabled(streamingEnabled);
+        setPreloadSizeKB(preloadSizeKB);
+
+        // Restore sample folder (use appropriate loading method based on streaming mode)
         juce::String folderPath = xml->getStringAttribute("sampleFolder", "");
         if (folderPath.isNotEmpty())
         {
             juce::File folder(folderPath);
             if (folder.exists() && folder.isDirectory())
             {
-                loadSamplesFromFolder(folder);
+                if (streamingEnabled)
+                    loadSamplesStreamingFromFolder(folder);
+                else
+                    loadSamplesFromFolder(folder);
             }
         }
     }
