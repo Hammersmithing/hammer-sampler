@@ -12,9 +12,9 @@ public:
 private:
     MidiKeyboardProcessor& processor;
 
-    static constexpr int startNote = 48;  // C3
-    static constexpr int endNote = 84;    // B5 (exclusive, so 36 notes)
-    static constexpr int numNotes = 36;
+    static constexpr int startNote = 21;  // A0
+    static constexpr int endNote = 109;   // C8+1 (exclusive, so 88 notes)
+    static constexpr int numNotes = 88;
 };
 
 class KeyboardDisplay : public juce::Component, public juce::Timer

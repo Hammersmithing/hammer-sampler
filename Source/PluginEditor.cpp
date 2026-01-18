@@ -130,94 +130,128 @@ void KeyboardDisplay::timerCallback()
 
 void KeyboardDisplay::drawOctave(juce::Graphics& g, juce::Rectangle<float> bounds, int startNote)
 {
-    const int numWhiteKeys = 7;
-    const float whiteKeyWidth = bounds.getWidth() / static_cast<float>(numWhiteKeys);
-    const float whiteKeyHeight = bounds.getHeight();
-    const float blackKeyWidth = whiteKeyWidth * 0.65f;
-    const float blackKeyHeight = whiteKeyHeight * 0.6f;
-
-    // White key note offsets from C: C=0, D=2, E=4, F=5, G=7, A=9, B=11
-    const int whiteKeyOffsets[] = {0, 2, 4, 5, 7, 9, 11};
-
-    // Draw white keys
-    for (int i = 0; i < numWhiteKeys; ++i)
-    {
-        float x = bounds.getX() + i * whiteKeyWidth;
-        juce::Rectangle<float> keyRect(x, bounds.getY(), whiteKeyWidth - 1, whiteKeyHeight);
-
-        int midiNote = startNote + whiteKeyOffsets[i];
-        bool isPressed = processor.isNoteOn(midiNote);
-        bool isAvailable = processor.isNoteAvailable(midiNote);
-        bool hasOwnSamples = processor.noteHasOwnSamples(midiNote);
-
-        if (isPressed)
-            g.setColour(juce::Colour(0xff4a9eff));  // Blue when pressed
-        else if (!isAvailable)
-            g.setColour(juce::Colour(0xff555555));  // Dark grey - unavailable
-        else if (!hasOwnSamples)
-            g.setColour(juce::Colour(0xffcccccc));  // Light grey - uses fallback
-        else
-            g.setColour(juce::Colours::white);      // White - has own samples
-
-        g.fillRect(keyRect);
-        g.setColour(juce::Colours::black);
-        g.drawRect(keyRect, 1.0f);
-    }
-
-    // Black key positions and offsets
-    const int blackKeyWhiteIndex[] = {0, 1, 3, 4, 5};
-    const int blackKeyOffsets[] = {1, 3, 6, 8, 10};
-
-    // Draw black keys
-    for (int i = 0; i < 5; ++i)
-    {
-        float x = bounds.getX() + (blackKeyWhiteIndex[i] + 1) * whiteKeyWidth - blackKeyWidth / 2;
-        juce::Rectangle<float> keyRect(x, bounds.getY(), blackKeyWidth, blackKeyHeight);
-
-        int midiNote = startNote + blackKeyOffsets[i];
-        bool isPressed = processor.isNoteOn(midiNote);
-        bool isAvailable = processor.isNoteAvailable(midiNote);
-        bool hasOwnSamples = processor.noteHasOwnSamples(midiNote);
-
-        if (isPressed)
-            g.setColour(juce::Colour(0xff4a9eff));  // Blue when pressed
-        else if (!isAvailable)
-            g.setColour(juce::Colour(0xff333333));  // Very dark grey - unavailable
-        else if (!hasOwnSamples)
-            g.setColour(juce::Colour(0xff444444));  // Dark grey - uses fallback
-        else
-            g.setColour(juce::Colours::black);      // Black - has own samples
-
-        g.fillRect(keyRect);
-
-        if (isPressed)
-        {
-            g.setColour(juce::Colours::white);
-            g.drawRect(keyRect, 1.0f);
-        }
-    }
+    // This function is no longer used - kept for compatibility
+    juce::ignoreUnused(g, bounds, startNote);
 }
 
 void KeyboardDisplay::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
 
-    // 3 octaves side by side: C3, C4, C5
-    const int numOctaves = 3;
-    const float octaveWidth = bounds.getWidth() / static_cast<float>(numOctaves);
+    // Reserve space for labels at the bottom
+    const float labelHeight = 15.0f;
+    auto keyboardBounds = bounds.withTrimmedBottom(labelHeight);
+    auto labelBounds = bounds.removeFromBottom(labelHeight);
 
-    // C3 = 48, C4 = 60, C5 = 72
-    const int startNotes[] = {48, 60, 72};
+    // 88 keys: A0 (21) to C8 (108)
+    // White keys: A0, B0, then C1-B7 (7 octaves), then C8 = 2 + 49 + 1 = 52 white keys
+    const int totalWhiteKeys = 52;
+    const float whiteKeyWidth = keyboardBounds.getWidth() / static_cast<float>(totalWhiteKeys);
+    const float whiteKeyHeight = keyboardBounds.getHeight();
+    const float blackKeyWidth = whiteKeyWidth * 0.65f;
+    const float blackKeyHeight = whiteKeyHeight * 0.6f;
 
-    for (int i = 0; i < numOctaves; ++i)
+    // Build a map of MIDI note to white key index (for white keys only)
+    // and track which white key index each note falls after (for black keys)
+
+    // White keys pattern in an octave: C, D, E, F, G, A, B (notes 0, 2, 4, 5, 7, 9, 11)
+    auto isWhiteKey = [](int midiNote) {
+        int noteInOctave = midiNote % 12;
+        return noteInOctave == 0 || noteInOctave == 2 || noteInOctave == 4 ||
+               noteInOctave == 5 || noteInOctave == 7 || noteInOctave == 9 || noteInOctave == 11;
+    };
+
+    // Calculate white key index for a given MIDI note
+    auto getWhiteKeyIndex = [](int midiNote) -> int {
+        // A0 = 21 is white key 0, B0 = 23 is white key 1
+        // C1 = 24 is white key 2, etc.
+        int whiteIndex = 0;
+        for (int n = 21; n < midiNote; ++n) {
+            int noteInOctave = n % 12;
+            if (noteInOctave == 0 || noteInOctave == 2 || noteInOctave == 4 ||
+                noteInOctave == 5 || noteInOctave == 7 || noteInOctave == 9 || noteInOctave == 11)
+                ++whiteIndex;
+        }
+        return whiteIndex;
+    };
+
+    // Draw white keys first
+    int whiteKeyIdx = 0;
+    for (int midiNote = 21; midiNote <= 108; ++midiNote)
     {
-        juce::Rectangle<float> octaveBounds(
-            bounds.getX() + i * octaveWidth,
-            bounds.getY(),
-            octaveWidth,
-            bounds.getHeight()
-        );
-        drawOctave(g, octaveBounds, startNotes[i]);
+        if (isWhiteKey(midiNote))
+        {
+            float x = keyboardBounds.getX() + whiteKeyIdx * whiteKeyWidth;
+            juce::Rectangle<float> keyRect(x, keyboardBounds.getY(), whiteKeyWidth - 1, whiteKeyHeight);
+
+            bool isPressed = processor.isNoteOn(midiNote);
+            bool isAvailable = processor.isNoteAvailable(midiNote);
+            bool hasOwnSamples = processor.noteHasOwnSamples(midiNote);
+
+            if (isPressed)
+                g.setColour(juce::Colour(0xff4a9eff));  // Blue when pressed
+            else if (!isAvailable)
+                g.setColour(juce::Colour(0xff555555));  // Dark grey - unavailable
+            else if (!hasOwnSamples)
+                g.setColour(juce::Colour(0xffcccccc));  // Light grey - uses fallback
+            else
+                g.setColour(juce::Colours::white);      // White - has own samples
+
+            g.fillRect(keyRect);
+            g.setColour(juce::Colours::black);
+            g.drawRect(keyRect, 1.0f);
+
+            ++whiteKeyIdx;
+        }
+    }
+
+    // Draw black keys on top
+    for (int midiNote = 21; midiNote <= 108; ++midiNote)
+    {
+        if (!isWhiteKey(midiNote))
+        {
+            // Find position: black key sits between white keys
+            int whiteKeyBefore = getWhiteKeyIndex(midiNote);
+            float x = keyboardBounds.getX() + whiteKeyBefore * whiteKeyWidth + whiteKeyWidth - blackKeyWidth / 2;
+            juce::Rectangle<float> keyRect(x, keyboardBounds.getY(), blackKeyWidth, blackKeyHeight);
+
+            bool isPressed = processor.isNoteOn(midiNote);
+            bool isAvailable = processor.isNoteAvailable(midiNote);
+            bool hasOwnSamples = processor.noteHasOwnSamples(midiNote);
+
+            if (isPressed)
+                g.setColour(juce::Colour(0xff4a9eff));  // Blue when pressed
+            else if (!isAvailable)
+                g.setColour(juce::Colour(0xff333333));  // Very dark grey - unavailable
+            else if (!hasOwnSamples)
+                g.setColour(juce::Colour(0xff444444));  // Dark grey - uses fallback
+            else
+                g.setColour(juce::Colours::black);      // Black - has own samples
+
+            g.fillRect(keyRect);
+
+            if (isPressed)
+            {
+                g.setColour(juce::Colours::white);
+                g.drawRect(keyRect, 1.0f);
+            }
+        }
+    }
+
+    // Draw C labels (C1 through C8)
+    g.setColour(juce::Colours::lightgrey);
+    g.setFont(11.0f);
+
+    for (int octave = 1; octave <= 8; ++octave)
+    {
+        int cNote = 12 + octave * 12;  // C1=24, C2=36, ..., C8=108
+        if (cNote >= 21 && cNote <= 108)
+        {
+            int whiteIdx = getWhiteKeyIndex(cNote);
+            float x = keyboardBounds.getX() + whiteIdx * whiteKeyWidth;
+            juce::Rectangle<float> labelRect(x, labelBounds.getY(), whiteKeyWidth, labelHeight);
+            g.drawText("C" + juce::String(octave), labelRect, juce::Justification::centred);
+        }
     }
 }
 
@@ -264,7 +298,7 @@ MidiKeyboardEditor::MidiKeyboardEditor(MidiKeyboardProcessor& p)
     setupSlider(sustainSlider, sustainLabel, 0.0, 1.0, adsr.sustain);
     setupSlider(releaseSlider, releaseLabel, 0.001, 3.0, adsr.release);
 
-    setSize(1200, 650);  // Taller for ADSR controls
+    setSize(1400, 650);  // Wider for 88 keys, taller for ADSR controls
 }
 
 void MidiKeyboardEditor::updateADSR()
@@ -312,7 +346,7 @@ void MidiKeyboardEditor::resized()
 
     const int controlsHeight = 30;
     const int adsrHeight = 70;
-    const int keyboardHeight = 120;
+    const int keyboardHeight = 135;  // Increased for C labels
     const int gap = 10;
 
     // Top controls row
