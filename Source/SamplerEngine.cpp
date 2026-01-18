@@ -599,6 +599,19 @@ void SamplerEngine::noteOn(int midiNote, int velocity, int roundRobin)
     if (!sample)
         return;
 
+    // Same-note voice stealing: stop any existing voices playing this note
+    // Use quick 10ms fadeout instead of normal release
+    static constexpr float quickFadeTimeMs = 10.0f;
+    float quickFadeSamples = (quickFadeTimeMs / 1000.0f) * static_cast<float>(currentSampleRate);
+    for (auto& voice : voices)
+    {
+        if (voice.active && voice.midiNote == midiNote)
+        {
+            voice.envStage = EnvelopeStage::Release;
+            voice.envIncrement = -voice.envLevel / quickFadeSamples;
+        }
+    }
+
     // Calculate pitch ratio: combines sample rate conversion and pitch shift
     double sampleRateRatio = sample->sampleRate / currentSampleRate;
     int semitoneDiff = midiNote - actualSampleNote;
@@ -1082,6 +1095,16 @@ void SamplerEngine::noteOnStreaming(int midiNote, int velocity, int roundRobin)
         engineDebugLog("noteOnStreaming: No sample found for note=" + juce::String(midiNote)
                       + " vel=" + juce::String(velocity) + " rr=" + juce::String(roundRobin));
         return;
+    }
+
+    // Same-note voice stealing: stop any existing voices playing this note
+    // Use quick 10ms fadeout instead of normal release
+    for (auto& voice : streamingVoices)
+    {
+        if (voice.isActive() && voice.getPlayingNote() == midiNote)
+        {
+            voice.startQuickFadeOut(currentSampleRate);
+        }
     }
 
     // Find a free streaming voice

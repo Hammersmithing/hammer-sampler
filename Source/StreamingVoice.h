@@ -23,6 +23,7 @@ public:
     // Voice lifecycle (called from audio thread)
     void startVoice(const PreloadedSample* sample, int midiNote, float velocity, double hostSampleRate);
     void stopVoice(bool allowTailOff);
+    void startQuickFadeOut(double sampleRate);  // 10ms fade for same-note stealing
     void reset();
 
     // Audio thread interface
@@ -100,6 +101,12 @@ private:
     // Underrun protection
     bool isUnderrunning = false;
     int underrunFadePosition = 0;
+
+    // Quick fade for same-note voice stealing (10ms)
+    bool isQuickFading = false;
+    float quickFadeLevel = 1.0f;
+    float quickFadeDecrement = 0.0f;
+    static constexpr float quickFadeTimeMs = 10.0f;
 
     // Static underrun counter (shared across all voices)
     static std::atomic<int> underrunCount;

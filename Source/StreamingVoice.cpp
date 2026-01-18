@@ -60,6 +60,9 @@ void StreamingVoice::startVoice(const PreloadedSample* sample, int midiNote, flo
     isUnderrunning = false;
     underrunFadePosition = 0;
     sustainedByPedal = false;
+    isQuickFading = false;
+    quickFadeLevel = 1.0f;
+    quickFadeDecrement = 0.0f;
 
     // Copy preload buffer into beginning of ring buffer
     const auto& preload = sample->preloadBuffer;
@@ -108,6 +111,16 @@ void StreamingVoice::stopVoice(bool allowTailOff)
     }
 }
 
+void StreamingVoice::startQuickFadeOut(double sampleRate)
+{
+    // 10ms quick fade for same-note voice stealing
+    // This overrides the normal ADSR release
+    isQuickFading = true;
+    quickFadeLevel = 1.0f;
+    float fadeTimeSamples = (quickFadeTimeMs / 1000.0f) * static_cast<float>(sampleRate);
+    quickFadeDecrement = 1.0f / fadeTimeSamples;
+}
+
 void StreamingVoice::reset()
 {
     active.store(false, std::memory_order_release);
@@ -116,6 +129,9 @@ void StreamingVoice::reset()
     playingNote = -1;
     sustainedByPedal = false;
     currentSample = nullptr;
+    isQuickFading = false;
+    quickFadeLevel = 1.0f;
+    quickFadeDecrement = 0.0f;
 }
 
 void StreamingVoice::noteReleasedWithPedal(bool pedalDown)
@@ -208,9 +224,20 @@ void StreamingVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int
             return;
         }
 
+        // Handle quick fade for same-note voice stealing
+        if (isQuickFading)
+        {
+            quickFadeLevel -= quickFadeDecrement;
+            if (quickFadeLevel <= 0.0f)
+            {
+                reset();
+                return;
+            }
+        }
+
         // Get envelope value
         float envelopeValue = adsr.getNextSample();
-        if (!adsr.isActive())
+        if (!adsr.isActive() && !isQuickFading)
         {
             reset();
             return;
@@ -282,9 +309,12 @@ void StreamingVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int
             // Linear interpolation
             float interpolated = sample0 + frac * (sample1 - sample0);
 
-            // Apply velocity, envelope, and underrun fade
-            outputBuffer.addSample(ch, startSample + sample,
-                                    interpolated * velocity * envelopeValue * underrunFade);
+            // Apply velocity, envelope, underrun fade, and quick fade
+            float finalGain = velocity * envelopeValue * underrunFade;
+            if (isQuickFading)
+                finalGain *= quickFadeLevel;
+
+            outputBuffer.addSample(ch, startSample + sample, interpolated * finalGain);
         }
 
         // Advance source position
