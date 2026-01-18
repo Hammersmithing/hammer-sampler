@@ -1,10 +1,12 @@
 # MIDI Keyboard Display & Sampler
 
-A JUCE-based VST3/AU plugin that displays MIDI input on a visual keyboard and plays back samples mapped to notes, velocities, and round-robin positions.
+A JUCE-based VST3/AU plugin that displays MIDI input on a visual 88-key keyboard and plays back samples mapped to notes, velocities, and round-robin positions. This is an MVP sampler designed for quick sample auditioning and performance.
 
 ## Features
 
-- Visual 3-octave keyboard display (C3-B5) with sample availability coloring
+- **Full 88-key piano display** (A0-C8) with octave labels (C1-C8) and sample availability coloring
+- **DAW project state persistence** - samples and settings auto-reload when you reopen a project
+- **Async sample loading** - projects load instantly, samples load in background thread
 - Dynamic per-note grid showing velocity layers and round-robin positions
 - Sample playback with velocity layers and round-robin cycling
 - Pitch-shifting for notes using fallback samples
@@ -84,16 +86,18 @@ Round-robin cycles through available samples (1 → 2 → 3 → 1) for natural v
 
 ### Keyboard
 
-The 3-octave keyboard (C3-B5) shows sample availability with color coding:
+The full 88-key piano keyboard (A0-C8) shows sample availability with color coding:
 - **White/Black (normal)**: Note has its own samples
 - **Light grey**: Note uses fallback samples (pitch-shifted from higher note)
 - **Dark grey**: Note is unavailable (no samples or fallback)
 - **Blue**: Note is currently pressed
 
+Octave labels (C1-C8) are displayed below the keyboard for easy reference.
+
 ### Note Grid
 
 The grid above the keyboard shows:
-- **Columns**: One per note (36 notes, C3-B5)
+- **Columns**: One per note (88 notes, A0-C8)
 - **Rows**: Dynamic based on loaded samples (matches your velocity layers)
 - **Cells**: 3 round-robin boxes (1, 2, 3) per velocity layer
 
@@ -117,6 +121,38 @@ Four rotary knobs control the global amplitude envelope:
 - **D (Decay)**: 0.001 - 2.0 seconds
 - **S (Sustain)**: 0.0 - 1.0 level
 - **R (Release)**: 0.001 - 3.0 seconds
+
+## State Persistence
+
+The plugin saves its state when your DAW project is saved, including:
+- **Sample folder path** - automatically reloads samples when project opens
+- **ADSR envelope settings** - attack, decay, sustain, release values
+
+This means you can close a project and reopen it later with all your samples and settings intact.
+
+### How It Works
+
+The plugin implements the VST3/AU state persistence API:
+- `getStateInformation()` - serializes plugin state to XML when DAW saves
+- `setStateInformation()` - restores state from XML when DAW loads project
+
+State is stored as XML with the following structure:
+```xml
+<MidiKeyboardState sampleFolder="/path/to/samples"
+                   attack="0.01" decay="0.1"
+                   sustain="0.7" release="0.3"/>
+```
+
+## Async Sample Loading
+
+To prevent DAW projects from freezing during load, samples are loaded asynchronously:
+
+1. **Project opens instantly** - `setStateInformation()` returns immediately
+2. **Background thread** - samples load on a separate thread
+3. **Non-blocking** - you can interact with your DAW while samples load
+4. **Thread-safe** - sample mappings are swapped atomically when ready
+
+This is especially important for large sample libraries that would otherwise block the DAW for several seconds.
 
 ## Building
 
