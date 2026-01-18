@@ -64,6 +64,12 @@ private:
 
     // Instrument info
     juce::Label fileSizeLabel;
+    juce::Label preloadMemLabel;
+
+    // Preload size control
+    juce::Slider preloadSlider;
+    juce::Label preloadLabel{"", "Preload"};
+    void preloadSliderChanged();
 
     // ADSR controls
     juce::Slider attackSlider, decaySlider, sustainSlider, releaseSlider;

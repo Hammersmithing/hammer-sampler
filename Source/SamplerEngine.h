@@ -67,6 +67,7 @@ public:
     LoadingState getLoadingState() const { return loadingState; }
     juce::String getLoadedFolderPath() const { return loadedFolderPath; }
     int64_t getTotalInstrumentFileSize() const { return totalInstrumentFileSize.load(); }
+    int64_t getPreloadMemoryBytes() const { return preloadMemoryBytes.load(); }
 
     // ADSR controls
     void setADSR(float attack, float decay, float sustain, float release);
@@ -76,6 +77,10 @@ public:
     bool isStreamingEnabled() const { return streamingEnabled; }
     void setStreamingEnabled(bool enabled);
     void loadSamplesStreamingFromFolder(const juce::File& folder);
+
+    // Preload size control (in KB, range 32-1024)
+    int getPreloadSizeKB() const { return preloadSizeKB; }
+    void setPreloadSizeKB(int sizeKB) { preloadSizeKB = juce::jlimit(32, 1024, sizeKB); }
 
     // Query sample configuration for UI
     bool isNoteAvailable(int midiNote) const;  // Has samples or valid fallback
@@ -128,6 +133,7 @@ private:
     double currentSampleRate = 44100.0;
     juce::String loadedFolderPath;
     std::atomic<int64_t> totalInstrumentFileSize{0};  // Total file size in bytes
+    std::atomic<int64_t> preloadMemoryBytes{0};       // RAM used by preload buffers
 
     // Async loading
     std::atomic<LoadingState> loadingState{LoadingState::Idle};
@@ -137,6 +143,7 @@ private:
 
     // ==================== Streaming Mode ====================
     bool streamingEnabled = false;
+    int preloadSizeKB = 64;  // Default 64KB, configurable 32-1024KB
 
     // Streaming voices
     std::array<StreamingVoice, StreamingConstants::maxStreamingVoices> streamingVoices;

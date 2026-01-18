@@ -22,10 +22,13 @@ public:
     bool areSamplesLoading() const { return samplerEngine.isLoading(); }
     juce::String getLoadedFolderPath() const { return samplerEngine.getLoadedFolderPath(); }
     int64_t getTotalInstrumentFileSize() const { return samplerEngine.getTotalInstrumentFileSize(); }
+    int64_t getPreloadMemoryBytes() const { return samplerEngine.getPreloadMemoryBytes(); }
 
     // Streaming mode
     bool isStreamingEnabled() const { return samplerEngine.isStreamingEnabled(); }
     void setStreamingEnabled(bool enabled) { samplerEngine.setStreamingEnabled(enabled); }
+    int getPreloadSizeKB() const { return samplerEngine.getPreloadSizeKB(); }
+    void setPreloadSizeKB(int sizeKB) { samplerEngine.setPreloadSizeKB(sizeKB); }
 
     // ADSR controls
     void setADSR(float attack, float decay, float sustain, float release);

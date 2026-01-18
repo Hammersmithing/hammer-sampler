@@ -840,9 +840,11 @@ void SamplerEngine::loadSamplesStreamingInBackground(const juce::String& folderP
     // Clear previous streaming samples
     std::vector<StreamingSample> tempSamples;
 
-    // Reset file size counter
+    // Reset file size and preload memory counters
     totalInstrumentFileSize = 0;
+    preloadMemoryBytes = 0;
     int64_t tempTotalSize = 0;
+    int64_t tempPreloadMemory = 0;
 
     // Find all audio files
     juce::Array<juce::File> audioFiles;
@@ -884,10 +886,10 @@ void SamplerEngine::loadSamplesStreamingInBackground(const juce::String& folderP
         ss.preload.lowVelocity = velocity;
         ss.preload.highVelocity = velocity;
 
-        // Calculate preload size in frames (64KB / (channels * 4 bytes))
+        // Calculate preload size in frames (preloadSizeKB * 1024 / (channels * 4 bytes))
         int bytesPerSample = 4;
-        ss.preload.preloadSizeFrames = PreloadedSample::preloadSizeBytes /
-                                       (ss.preload.numChannels * bytesPerSample);
+        int preloadBytes = preloadSizeKB * 1024;
+        ss.preload.preloadSizeFrames = preloadBytes / (ss.preload.numChannels * bytesPerSample);
 
         // Cap preload to total sample length
         int framesToPreload = std::min(ss.preload.preloadSizeFrames,
@@ -898,7 +900,9 @@ void SamplerEngine::loadSamplesStreamingInBackground(const juce::String& folderP
         reader->read(&ss.preload.preloadBuffer, 0, framesToPreload, 0, true, true);
 
         // Track memory usage
-        totalPreloadBytes += static_cast<size_t>(framesToPreload * ss.preload.numChannels * bytesPerSample);
+        int64_t thisPreloadBytes = static_cast<int64_t>(framesToPreload) * ss.preload.numChannels * bytesPerSample;
+        tempPreloadMemory += thisPreloadBytes;
+        totalPreloadBytes += static_cast<size_t>(thisPreloadBytes);
         totalFullBytes += static_cast<size_t>(ss.preload.totalSampleFrames * ss.preload.numChannels * bytesPerSample);
 
         double durationSec = static_cast<double>(ss.preload.totalSampleFrames) / ss.preload.sampleRate;
@@ -986,8 +990,9 @@ void SamplerEngine::loadSamplesStreamingInBackground(const juce::String& folderP
         noteMappings = std::move(tempMappings);
     }
 
-    // Store total file size
+    // Store total file size and preload memory
     totalInstrumentFileSize = tempTotalSize;
+    preloadMemoryBytes = tempPreloadMemory;
 
     engineDebugLog("=== STREAMING MODE SUMMARY ===");
     engineDebugLog("  Total samples: " + juce::String(streamingSamples.size()));

@@ -314,6 +314,25 @@ MidiKeyboardEditor::MidiKeyboardEditor(MidiKeyboardProcessor& p)
     fileSizeLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
     fileSizeLabel.setJustificationType(juce::Justification::centredRight);
 
+    // Preload memory label
+    addAndMakeVisible(preloadMemLabel);
+    preloadMemLabel.setFont(juce::FontOptions(12.0f));
+    preloadMemLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    preloadMemLabel.setJustificationType(juce::Justification::centredRight);
+
+    // Preload size slider (only shown for streaming mode)
+    preloadSlider.setSliderStyle(juce::Slider::RotaryVerticalDrag);
+    preloadSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 15);
+    preloadSlider.setRange(32, 1024, 1);  // 32KB to 1024KB (1MB)
+    preloadSlider.setValue(processorRef.getPreloadSizeKB());
+    preloadSlider.setTextValueSuffix(" KB");
+    preloadSlider.onValueChange = [this] { preloadSliderChanged(); };
+    addAndMakeVisible(preloadSlider);
+
+    preloadLabel.setJustificationType(juce::Justification::centred);
+    preloadLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    addAndMakeVisible(preloadLabel);
+
     // Start timer for async loading status updates
     startTimerHz(10);
 
@@ -343,6 +362,26 @@ void MidiKeyboardEditor::timerCallback()
             else
                 sizeStr = juce::String(totalBytes) + " B";
             fileSizeLabel.setText("Size: " + sizeStr, juce::dontSendNotification);
+
+            // Update preload memory display (only for streaming mode)
+            if (pendingLoadStreaming)
+            {
+                int64_t preloadBytes = processorRef.getPreloadMemoryBytes();
+                juce::String preloadStr;
+                if (preloadBytes >= 1024 * 1024 * 1024)
+                    preloadStr = juce::String(preloadBytes / (1024.0 * 1024.0 * 1024.0), 2) + " GB";
+                else if (preloadBytes >= 1024 * 1024)
+                    preloadStr = juce::String(preloadBytes / (1024.0 * 1024.0), 1) + " MB";
+                else if (preloadBytes >= 1024)
+                    preloadStr = juce::String(preloadBytes / 1024.0, 1) + " KB";
+                else
+                    preloadStr = juce::String(preloadBytes) + " B";
+                preloadMemLabel.setText("RAM: " + preloadStr, juce::dontSendNotification);
+            }
+            else
+            {
+                preloadMemLabel.setText("", juce::dontSendNotification);
+            }
         }
         else if (!processorRef.areSamplesLoading())
         {
@@ -375,6 +414,28 @@ void MidiKeyboardEditor::streamingToggleChanged()
     if (processorRef.areSamplesLoaded())
     {
         statusLabel.setText("Reload samples to apply mode change", juce::dontSendNotification);
+    }
+}
+
+void MidiKeyboardEditor::preloadSliderChanged()
+{
+    processorRef.setPreloadSizeKB(static_cast<int>(preloadSlider.getValue()));
+
+    // Auto-reload samples if streaming mode is enabled and samples are loaded
+    if (processorRef.areSamplesLoaded() && processorRef.isStreamingEnabled())
+    {
+        juce::String folderPath = processorRef.getLoadedFolderPath();
+        if (folderPath.isNotEmpty())
+        {
+            juce::File folder(folderPath);
+            if (folder.isDirectory())
+            {
+                processorRef.loadSamplesStreamingFromFolder(folder);
+                statusLabel.setText("Reloading with " + juce::String(static_cast<int>(preloadSlider.getValue())) + " KB preload...", juce::dontSendNotification);
+                pendingLoadFolder = folder.getFileName();
+                pendingLoadStreaming = true;
+            }
+        }
     }
 }
 
@@ -427,7 +488,9 @@ void MidiKeyboardEditor::resized()
     loadButton.setBounds(controlsArea.removeFromLeft(120));
     controlsArea.removeFromLeft(10);
 
-    // File size on the right
+    // Preload RAM and file size on the right
+    preloadMemLabel.setBounds(controlsArea.removeFromRight(90));
+    controlsArea.removeFromRight(5);
     fileSizeLabel.setBounds(controlsArea.removeFromRight(100));
     controlsArea.removeFromRight(10);
 
@@ -458,6 +521,14 @@ void MidiKeyboardEditor::resized()
     layoutKnob(decaySlider, decayLabel);
     layoutKnob(sustainSlider, sustainLabel);
     layoutKnob(releaseSlider, releaseLabel);
+
+    // Add some spacing before preload knob
+    adsrArea.removeFromLeft(20);
+
+    // Preload knob (wider to fit "Preload" label and "XXX KB" text)
+    auto preloadArea = adsrArea.removeFromLeft(70);
+    preloadLabel.setBounds(preloadArea.removeFromTop(labelHeight));
+    preloadSlider.setBounds(preloadArea);
 
     bounds.removeFromTop(gap);
 
