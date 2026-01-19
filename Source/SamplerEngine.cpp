@@ -317,7 +317,6 @@ void SamplerEngine::loadSamplesInBackground(const juce::String& folderPath)
     totalInstrumentFileSize = 0;
     preloadMemoryBytes = 0;
     int64_t tempTotalSize = 0;
-    int64_t tempPreloadMemory = 0;
     int tempMaxRoundRobins = 1;
 
     juce::Array<juce::File> audioFiles;
@@ -345,6 +344,8 @@ void SamplerEngine::loadSamplesInBackground(const juce::String& folderPath)
         ss.midiNote = note;
         ss.velocity = velocity;
         ss.roundRobin = roundRobin;
+        ss.velocityLayerIndex = -1;  // Will be set after building noteMappings
+        ss.isPreloaded = false;      // Don't preload yet - will be done by updatePreloadedSamples
 
         ss.preload.filePath = file.getFullPathName();
         ss.preload.sampleRate = reader->sampleRate;
@@ -356,19 +357,7 @@ void SamplerEngine::loadSamplesInBackground(const juce::String& folderPath)
         ss.preload.highNote = note;
         ss.preload.lowVelocity = velocity;
         ss.preload.highVelocity = velocity;
-
-        int bytesPerSample = 4;
-        int preloadBytes = preloadSizeKB * 1024;
-        ss.preload.preloadSizeFrames = preloadBytes / (ss.preload.numChannels * bytesPerSample);
-
-        int framesToPreload = std::min(ss.preload.preloadSizeFrames,
-                                        static_cast<int>(ss.preload.totalSampleFrames));
-
-        ss.preload.preloadBuffer.setSize(ss.preload.numChannels, framesToPreload);
-        reader->read(&ss.preload.preloadBuffer, 0, framesToPreload, 0, true, true);
-
-        int64_t thisPreloadBytes = static_cast<int64_t>(framesToPreload) * ss.preload.numChannels * bytesPerSample;
-        tempPreloadMemory += thisPreloadBytes;
+        ss.preload.preloadSizeFrames = 0;  // Will be set when actually preloaded
 
         tempSamples.push_back(std::move(ss));
     }
@@ -447,7 +436,6 @@ void SamplerEngine::loadSamplesInBackground(const juce::String& folderPath)
     }
 
     totalInstrumentFileSize = tempTotalSize;
-    preloadMemoryBytes = tempPreloadMemory;
     maxRoundRobins = tempMaxRoundRobins;
 
     // Calculate max velocity layers across all notes
@@ -462,11 +450,34 @@ void SamplerEngine::loadSamplesInBackground(const juce::String& folderPath)
     velocityLayerLimit = maxVelocityLayersGlobal;  // Default to max
     roundRobinLimit = maxRoundRobins;  // Default to max
 
-    engineDebugLog("Loaded " + juce::String(streamingSamples.size()) + " samples");
+    // Calculate velocityLayerIndex for each sample based on its position in the note's sorted layers
+    {
+        std::lock_guard<std::recursive_mutex> lock(mappingsMutex);
+        for (auto& ss : streamingSamples)
+        {
+            auto noteIt = noteMappings.find(ss.midiNote);
+            if (noteIt != noteMappings.end())
+            {
+                const auto& layers = noteIt->second.velocityLayers;
+                for (size_t i = 0; i < layers.size(); ++i)
+                {
+                    if (layers[i].velocityValue == ss.velocity)
+                    {
+                        ss.velocityLayerIndex = static_cast<int>(i);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    engineDebugLog("Loaded " + juce::String(streamingSamples.size()) + " samples (metadata only)");
     engineDebugLog("Max round-robins: " + juce::String(maxRoundRobins));
     engineDebugLog("Max velocity layers: " + juce::String(maxVelocityLayersGlobal));
     engineDebugLog("Total file size: " + juce::String(tempTotalSize / (1024 * 1024)) + " MB");
-    engineDebugLog("Preload memory: " + juce::String(tempPreloadMemory / 1024) + " KB");
+
+    // Preload samples that are within the current limits
+    updatePreloadedSamples();
 
     // Re-register voices with DiskStreamer
     if (diskStreamer)
@@ -510,18 +521,21 @@ const SamplerEngine::StreamingSample* SamplerEngine::findStreamingSample(int mid
     int targetVelocity = layers[static_cast<size_t>(layerIndex)].velocityValue;
 
     // Find the sample with matching note, velocity, and round-robin
+    // Only return preloaded samples
+    const StreamingSample* fallbackSample = nullptr;
     for (const auto& ss : streamingSamples)
     {
-        if (ss.midiNote == actualNote && ss.velocity == targetVelocity)
+        if (ss.midiNote == actualNote && ss.velocity == targetVelocity && ss.isPreloaded)
         {
             if (ss.roundRobin == roundRobin)
                 return &ss;
-            // If exact RR not found, return any matching sample
-            return &ss;
+            // Track a fallback in case exact RR not found
+            if (fallbackSample == nullptr)
+                fallbackSample = &ss;
         }
     }
 
-    return nullptr;
+    return fallbackSample;
 }
 
 void SamplerEngine::noteOn(int midiNote, int velocity, int roundRobin, int sampleOffset)
@@ -711,4 +725,96 @@ int SamplerEngine::getUnderrunCount() const
 void SamplerEngine::resetUnderrunCount()
 {
     StreamingVoice::resetUnderrunCount();
+}
+
+void SamplerEngine::setVelocityLayerLimit(int limit)
+{
+    int newLimit = juce::jlimit(1, juce::jmax(1, maxVelocityLayersGlobal), limit);
+    if (newLimit != velocityLayerLimit)
+    {
+        velocityLayerLimit = newLimit;
+        updatePreloadedSamples();
+    }
+}
+
+void SamplerEngine::setRoundRobinLimit(int limit)
+{
+    int newLimit = juce::jlimit(1, juce::jmax(1, maxRoundRobins), limit);
+    if (newLimit != roundRobinLimit)
+    {
+        roundRobinLimit = newLimit;
+        updatePreloadedSamples();
+    }
+}
+
+bool SamplerEngine::shouldSampleBePreloaded(const StreamingSample& ss) const
+{
+    // Sample should be preloaded if:
+    // 1. Its velocity layer index is within the limit (0 to velocityLayerLimit-1)
+    // 2. Its round robin is within the limit (1 to roundRobinLimit)
+    return (ss.velocityLayerIndex >= 0 &&
+            ss.velocityLayerIndex < velocityLayerLimit &&
+            ss.roundRobin >= 1 &&
+            ss.roundRobin <= roundRobinLimit);
+}
+
+void SamplerEngine::loadSamplePreloadBuffer(StreamingSample& ss)
+{
+    auto reader = std::unique_ptr<juce::AudioFormatReader>(
+        formatManager.createReaderFor(juce::File(ss.preload.filePath)));
+    if (!reader)
+        return;
+
+    int bytesPerSample = sizeof(float);
+    int preloadBytes = preloadSizeKB * 1024;
+    int framesToPreload = preloadBytes / (ss.preload.numChannels * bytesPerSample);
+    framesToPreload = std::min(framesToPreload, static_cast<int>(ss.preload.totalSampleFrames));
+
+    ss.preload.preloadBuffer.setSize(ss.preload.numChannels, framesToPreload);
+    reader->read(&ss.preload.preloadBuffer, 0, framesToPreload, 0, true, true);
+    ss.preload.preloadSizeFrames = framesToPreload;
+}
+
+void SamplerEngine::updatePreloadedSamples()
+{
+    std::lock_guard<std::recursive_mutex> lock(mappingsMutex);
+
+    int64_t totalPreloadBytes = 0;
+    int loadedCount = 0;
+    int unloadedCount = 0;
+
+    for (auto& ss : streamingSamples)
+    {
+        bool shouldBeLoaded = shouldSampleBePreloaded(ss);
+
+        if (shouldBeLoaded && !ss.isPreloaded)
+        {
+            // Load this sample's preload buffer from disk
+            loadSamplePreloadBuffer(ss);
+            ss.isPreloaded = true;
+            loadedCount++;
+        }
+        else if (!shouldBeLoaded && ss.isPreloaded)
+        {
+            // Unload this sample's preload buffer
+            ss.preload.preloadBuffer.setSize(0, 0);  // Free memory
+            ss.preload.preloadSizeFrames = 0;
+            ss.isPreloaded = false;
+            unloadedCount++;
+        }
+
+        if (ss.isPreloaded)
+        {
+            totalPreloadBytes += static_cast<int64_t>(ss.preload.preloadBuffer.getNumSamples()) *
+                                 ss.preload.numChannels * sizeof(float);
+        }
+    }
+
+    preloadMemoryBytes = totalPreloadBytes;
+
+    engineDebugLog("updatePreloadedSamples: velLimit=" + juce::String(velocityLayerLimit) +
+                   " rrLimit=" + juce::String(roundRobinLimit) +
+                   " loaded=" + juce::String(loadedCount) +
+                   " unloaded=" + juce::String(unloadedCount) +
+                   " preloadMem=" + juce::String(totalPreloadBytes / 1024) + " KB");
 }

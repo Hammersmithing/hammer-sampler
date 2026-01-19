@@ -477,7 +477,7 @@ void MidiKeyboardEditor::timerCallback()
         }
     }
 
-    // Update voice activity (real-time)
+    // Update voice activity and preload RAM (real-time)
     if (processorRef.areSamplesLoaded())
     {
         int activeVoices = processorRef.getActiveVoiceCount();
@@ -490,6 +490,19 @@ void MidiKeyboardEditor::timerCallback()
         if (underruns > 0)
             throughputText += " (" + juce::String(underruns) + " drop)";
         throughputLabel.setText(throughputText, juce::dontSendNotification);
+
+        // Update preload memory display (changes when limits change)
+        int64_t preloadBytes = processorRef.getPreloadMemoryBytes();
+        juce::String preloadStr;
+        if (preloadBytes >= 1024 * 1024 * 1024)
+            preloadStr = juce::String(preloadBytes / (1024.0 * 1024.0 * 1024.0), 2) + " GB";
+        else if (preloadBytes >= 1024 * 1024)
+            preloadStr = juce::String(preloadBytes / (1024.0 * 1024.0), 1) + " MB";
+        else if (preloadBytes >= 1024)
+            preloadStr = juce::String(preloadBytes / 1024.0, 1) + " KB";
+        else
+            preloadStr = juce::String(preloadBytes) + " B";
+        preloadMemLabel.setText("RAM: " + preloadStr, juce::dontSendNotification);
     }
     else
     {

@@ -83,11 +83,11 @@ public:
     int getMaxVelocityLayersGlobal() const { return maxVelocityLayersGlobal; }  // Max velocity layers found across all notes
 
     // Velocity layer limit (1 to maxVelocityLayersGlobal)
-    void setVelocityLayerLimit(int limit) { velocityLayerLimit = juce::jlimit(1, juce::jmax(1, maxVelocityLayersGlobal), limit); }
+    void setVelocityLayerLimit(int limit);
     int getVelocityLayerLimit() const { return velocityLayerLimit; }
 
     // Round robin limit (1 to maxRoundRobins)
-    void setRoundRobinLimit(int limit) { roundRobinLimit = juce::jlimit(1, juce::jmax(1, maxRoundRobins), limit); }
+    void setRoundRobinLimit(int limit);
     int getRoundRobinLimit() const { return roundRobinLimit; }
 
     // Same-note retrigger release time (for experimentation)
@@ -148,6 +148,8 @@ private:
         int midiNote = 0;
         int velocity = 0;
         int roundRobin = 0;
+        int velocityLayerIndex = -1;  // Which layer this sample belongs to (0-based)
+        bool isPreloaded = false;     // Whether preload buffer is currently loaded
     };
     std::vector<StreamingSample> streamingSamples;
 
@@ -157,4 +159,9 @@ private:
     // Internal methods
     void loadSamplesInBackground(const juce::String& folderPath);
     const StreamingSample* findStreamingSample(int midiNote, int velocity, int roundRobin) const;
+
+    // Selective preloading methods
+    bool shouldSampleBePreloaded(const StreamingSample& ss) const;
+    void updatePreloadedSamples();
+    void loadSamplePreloadBuffer(StreamingSample& ss);
 };
