@@ -58,21 +58,25 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
 
             if (!pedalNowDown && sustainPedalDown)
             {
-                // Pedal released - clear all sustained notes and per-note activations
+                // Pedal released - release only sustained notes (keys already released)
+                // Notes still held by fingers should remain active
                 for (size_t i = 0; i < 128; ++i)
                 {
                     if (noteSustained[i])
                     {
+                        // This note was released while pedal was down - now release it fully
                         noteVelocities[i] = 0;
                         noteVelocityLayerIdx[i] = -1;
                         noteRoundRobin[i] = 0;
                         noteSustained[i] = false;
+                        noteLayersActivated[i].fill(false);
+                        noteRRActivated[i].fill(false);
+                        for (auto& layerArr : noteLayerRRActivated[i])
+                            layerArr.fill(false);
                         samplerEngine.noteOff(static_cast<int>(i));
                     }
-                    noteLayersActivated[i].fill(false);
-                    noteRRActivated[i].fill(false);
-                    for (auto& layerArr : noteLayerRRActivated[i])
-                        layerArr.fill(false);
+                    // Notes still held (noteSustained == false but noteVelocities > 0)
+                    // keep their state - fingers are still on the keys
                 }
             }
             sustainPedalDown = pedalNowDown;
