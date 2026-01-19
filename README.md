@@ -9,7 +9,7 @@ A JUCE-based VST3 plugin that displays MIDI input on a visual 88-key keyboard an
 - **DAW project state persistence** - samples and settings auto-reload when you reopen a project
 - **Async sample loading** - projects load instantly, samples load in background thread
 - Dynamic per-note grid showing velocity layers and round-robin positions
-- Sample playback with velocity layers and round-robin cycling (up to 180 voices)
+- Sample playback with velocity layers and dynamic round-robin cycling (auto-detected from samples, up to 180 voices)
 - Pitch-shifting for notes using fallback samples
 - Global ADSR envelope controls
 - **Transpose** (-12 to +12 semitones) - shift output notes
@@ -84,7 +84,9 @@ If you have samples for C4, E4, and G4, but play D4:
 
 ### Round-Robin
 
-Round-robin cycles through available samples (1 → 2 → 3 → 1) for natural variation when repeatedly playing the same note at similar velocities.
+Round-robin cycles through available samples for natural variation when repeatedly playing the same note at similar velocities.
+
+**Dynamic Detection:** The plugin automatically detects the number of round-robin positions from your sample filenames. If your library has samples numbered `_01` through `_06`, the plugin cycles through all 6 positions (1 → 2 → 3 → 4 → 5 → 6 → 1). The UI grid dynamically adjusts to show the correct number of RR boxes.
 
 ## Visual Display
 
@@ -384,7 +386,6 @@ Potential features to implement:
 
 ### Engine Improvements
 - **Sample rate conversion** - Resample on-the-fly if samples don't match host rate
-- **More round-robin positions** - Expand beyond 1-3 for libraries with more variations
 - **Legato mode** - Monophonic playing with glide
 
 ### UI/UX

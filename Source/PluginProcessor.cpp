@@ -96,8 +96,9 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
             // Trigger sample playback
             samplerEngine.noteOn(midiNote, velocity, currentRoundRobin, sampleOffsetAmount);
 
-            // Advance round-robin: 1 -> 2 -> 3 -> 1
-            currentRoundRobin = (currentRoundRobin % 3) + 1;
+            // Advance round-robin: 1 -> 2 -> ... -> N -> 1
+            int maxRR = samplerEngine.getMaxRoundRobins();
+            currentRoundRobin = (currentRoundRobin % maxRR) + 1;
         }
         else if (message.isNoteOff())
         {

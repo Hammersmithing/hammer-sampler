@@ -57,11 +57,12 @@ void NoteGridDisplay::paint(juce::Graphics& g)
             bool layerActive = layerExists &&
                 ((currentLayerIdx == actualLayerIdx) || processor.isNoteLayerActivated(midiNote, actualLayerIdx));
 
-            // Draw the 3 RR boxes within this layer cell
-            float boxWidth = (noteWidth - 4 * boxGap) / 3.0f;
+            // Draw RR boxes within this layer cell (dynamic count based on loaded samples)
+            int maxRR = processor.getMaxRoundRobins();
+            float boxWidth = (noteWidth - (maxRR + 1) * boxGap) / static_cast<float>(maxRR);
             float boxHeight = layerHeight - 2 * boxGap;
 
-            for (int rr = 1; rr <= 3; ++rr)
+            for (int rr = 1; rr <= maxRR; ++rr)
             {
                 float boxX = noteX + boxGap + (rr - 1) * (boxWidth + boxGap);
                 float boxY = layerY + boxGap;

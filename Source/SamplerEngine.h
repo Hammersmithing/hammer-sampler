@@ -79,6 +79,7 @@ public:
     int getHighestAvailableNote() const;
     int getMaxVelocityLayers(int startNote, int endNote) const;  // Max layers in range
     int getVelocityLayerIndex(int midiNote, int velocity) const;  // Index of layer for velocity (0-based)
+    int getMaxRoundRobins() const { return maxRoundRobins; }  // Max RR positions found in samples
 
 private:
     // Parse note name to MIDI note number (e.g., "C4" -> 60, "G#6" -> 104)
@@ -103,6 +104,9 @@ private:
 
     // Preload size
     int preloadSizeKB = 64;  // Default 64KB, configurable 32-1024KB
+
+    // Max round-robin positions found in loaded samples
+    int maxRoundRobins = 1;
 
     // Streaming voices
     std::array<StreamingVoice, StreamingConstants::maxStreamingVoices> streamingVoices;

@@ -52,6 +52,7 @@ public:
     int getHighestAvailableNote() const { return samplerEngine.getHighestAvailableNote(); }
     int getMaxVelocityLayers(int startNote, int endNote) const { return samplerEngine.getMaxVelocityLayers(startNote, endNote); }
     int getVelocityLayerIndex(int midiNote, int velocity) const { return samplerEngine.getVelocityLayerIndex(midiNote, velocity); }
+    int getMaxRoundRobins() const { return samplerEngine.getMaxRoundRobins(); }
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -98,6 +99,7 @@ public:
     bool isNoteRRActivated(int midiNote, int rrPosition) const
     {
         auto idx = static_cast<size_t>(midiNote);
+        if (rrPosition < 0 || rrPosition > maxRoundRobinPositions) return false;
         return noteRRActivated[idx][static_cast<size_t>(rrPosition)];
     }
 
@@ -109,7 +111,8 @@ private:
     std::array<int, 128> noteRoundRobin{};  // Which RR position each note triggered (0=none, 1-3)
     std::array<bool, 128> noteSustained{};  // Notes held by sustain pedal
     std::array<std::array<bool, maxVelocityLayers>, 128> noteLayersActivated{};  // Per-note: which layers activated
-    std::array<std::array<bool, 4>, 128> noteRRActivated{};     // Per-note: which RR positions activated (index 1-3)
+    static constexpr int maxRoundRobinPositions = 16;  // Max RR positions we support
+    std::array<std::array<bool, maxRoundRobinPositions + 1>, 128> noteRRActivated{};  // Per-note: which RR positions activated (index 1-N)
     int currentRoundRobin = 1;  // Next RR position to assign (cycles 1->2->3->1)
     bool sustainPedalDown = false;
     int transposeAmount = 0;      // -12 to +12 semitones

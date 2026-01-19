@@ -265,7 +265,7 @@ bool SamplerEngine::parseFileName(const juce::String& fileName, int& note, int& 
     if (rrStr.length() < 1 || !rrStr.containsOnly("0123456789"))
         return false;
     roundRobin = rrStr.getIntValue();
-    if (roundRobin < 1 || roundRobin > 3)
+    if (roundRobin < 1)
         return false;
 
     return true;
@@ -314,6 +314,7 @@ void SamplerEngine::loadSamplesInBackground(const juce::String& folderPath)
     preloadMemoryBytes = 0;
     int64_t tempTotalSize = 0;
     int64_t tempPreloadMemory = 0;
+    int tempMaxRoundRobins = 1;
 
     juce::Array<juce::File> audioFiles;
     folder.findChildFiles(audioFiles, juce::File::findFiles, false, "*.wav;*.aif;*.aiff;*.flac;*.mp3");
@@ -325,6 +326,10 @@ void SamplerEngine::loadSamplesInBackground(const juce::String& folderPath)
         int note, velocity, roundRobin;
         if (!parseFileName(file.getFileName(), note, velocity, roundRobin))
             continue;
+
+        // Track max round-robin found
+        if (roundRobin > tempMaxRoundRobins)
+            tempMaxRoundRobins = roundRobin;
 
         tempTotalSize += file.getSize();
 
@@ -439,8 +444,10 @@ void SamplerEngine::loadSamplesInBackground(const juce::String& folderPath)
 
     totalInstrumentFileSize = tempTotalSize;
     preloadMemoryBytes = tempPreloadMemory;
+    maxRoundRobins = tempMaxRoundRobins;
 
     engineDebugLog("Loaded " + juce::String(streamingSamples.size()) + " samples");
+    engineDebugLog("Max round-robins: " + juce::String(maxRoundRobins));
     engineDebugLog("Total file size: " + juce::String(tempTotalSize / (1024 * 1024)) + " MB");
     engineDebugLog("Preload memory: " + juce::String(tempPreloadMemory / 1024) + " KB");
 
