@@ -106,14 +106,16 @@ Octave labels (C1-C8) are displayed below the keyboard for easy reference.
 
 The grid above the keyboard shows:
 - **Columns**: One per note (88 notes, A0-C8)
-- **Rows**: Dynamic based on loaded samples (matches your velocity layers)
-- **Cells**: 3 round-robin boxes (1, 2, 3) per velocity layer
+- **Rows**: Dynamic based on velocity layer limit (scales to fill available space)
+- **Cells**: Round-robin boxes per velocity layer (scales based on RR limit)
 
 **Grid colors:**
 - **Blue**: Active velocity layer and round-robin position
 - **Dim blue**: Active velocity layer, different round-robin
 - **Dark grey**: Available but not active
 - **Very dark grey**: Unavailable (no samples for this note/layer)
+
+**Dynamic Scaling:** The grid automatically rescales when you adjust the Velocity Layer Limit or RR Limit sliders. With fewer layers/positions, each cell grows larger to fill the space, making it easier to see activity.
 
 When a note is played:
 - The corresponding key lights up blue
@@ -122,9 +124,33 @@ When a note is played:
 
 With sustain pedal held, all triggered states accumulate and persist until pedal release.
 
-### ADSR Controls
+### UI Controls
 
-Four rotary knobs control the global amplitude envelope:
+All rotary knobs use **horizontal drag** (left/right) to adjust values. The controls are arranged in a single row:
+
+| Control | Range | Description |
+|---------|-------|-------------|
+| **A** (Attack) | 0.001 - 2.0s | Envelope attack time |
+| **D** (Decay) | 0.001 - 2.0s | Envelope decay time |
+| **S** (Sustain) | 0.0 - 1.0 | Envelope sustain level |
+| **R** (Release) | 0.001 - 3.0s | Envelope release time |
+| **Preload** | 32 - 1024 KB | Per-sample preload buffer size |
+| **Transpose** | -12 to +12 | Semitone shift (no pitch correction) |
+| **Sample Ofs** | -12 to +12 | Sample borrowing with pitch correction |
+| **Vel Layers** | 1 to max | Limit velocity layers used |
+| **RR Limit** | 1 to max | Limit round-robin positions |
+
+### Status Display
+
+The top-right area shows real-time information:
+- **Size**: Total instrument file size on disk (GB/MB)
+- **RAM**: Memory used by preload buffers
+- **Voices**: Active voices | Streaming voices
+- **Throughput**: Current disk read speed (MB/s)
+
+### ADSR Envelope
+
+The global amplitude envelope shapes each note:
 - **A (Attack)**: 0.001 - 2.0 seconds
 - **D (Decay)**: 0.001 - 2.0 seconds
 - **S (Sustain)**: 0.0 - 1.0 level
@@ -180,6 +206,23 @@ Reduces the number of round robin positions cycled through during playback. The 
 **Example limited to 1:**
 - All notes trigger the same round robin position
 - No variation, but minimal disk reads
+
+### Data Reduction Strategy
+
+The Velocity Layer Limit and RR Limit can be combined to drastically reduce disk I/O and CPU usage:
+
+| Configuration | Effect |
+|---------------|--------|
+| Full layers + Full RR | Maximum quality, highest disk usage |
+| Reduced layers + Full RR | Simpler dynamics, natural variation |
+| Full layers + Reduced RR | Full dynamics, less variation |
+| 1 layer + 1 RR | Minimal disk reads, consistent sound |
+
+**Use cases:**
+- **Live performance**: Reduce limits to ensure no disk dropouts
+- **Lo-fi aesthetic**: Use 1-2 velocity layers for a vintage sampler sound
+- **CPU-limited systems**: Reduce RR to minimize concurrent disk reads
+- **Quick sketching**: Minimal settings for fast response
 
 ## State Persistence
 
@@ -379,7 +422,7 @@ cmake ..
 cmake --build . --config Release
 ```
 
-Output plugins are in `build/HammerSampler_artefacts/Debug/`:
+Output plugins are in `build/HammerSampler_artefacts/Release/` (or `Debug/`):
 - `VST3/Hammer Sampler.vst3`
 - `Standalone/Hammer Sampler.app`
 
@@ -389,7 +432,7 @@ Copy the built plugin to your system plugin folder:
 
 **macOS:**
 ```bash
-cp -R build/HammerSampler_artefacts/Debug/VST3/*.vst3 ~/Library/Audio/Plug-Ins/VST3/
+cp -R build/HammerSampler_artefacts/VST3/*.vst3 ~/Library/Audio/Plug-Ins/VST3/
 ```
 
 ## Example Sample Library Structure
