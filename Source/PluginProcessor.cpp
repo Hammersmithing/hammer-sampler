@@ -96,9 +96,9 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
             // Trigger sample playback
             samplerEngine.noteOn(midiNote, velocity, currentRoundRobin, sampleOffsetAmount);
 
-            // Advance round-robin: 1 -> 2 -> ... -> N -> 1
-            int maxRR = samplerEngine.getMaxRoundRobins();
-            currentRoundRobin = (currentRoundRobin % maxRR) + 1;
+            // Advance round-robin: 1 -> 2 -> ... -> N -> 1 (limited by roundRobinLimit)
+            int rrLimit = samplerEngine.getRoundRobinLimit();
+            currentRoundRobin = (currentRoundRobin % rrLimit) + 1;
         }
         else if (message.isNoteOff())
         {
@@ -154,6 +154,9 @@ void MidiKeyboardProcessor::getStateInformation(juce::MemoryBlock& destData)
     // Save velocity layer limit
     xml.setAttribute("velocityLayerLimit", samplerEngine.getVelocityLayerLimit());
 
+    // Save round robin limit
+    xml.setAttribute("roundRobinLimit", samplerEngine.getRoundRobinLimit());
+
     copyXmlToBinary(xml, destData);
 }
 
@@ -186,6 +189,10 @@ void MidiKeyboardProcessor::setStateInformation(const void* data, int sizeInByte
         // Restore velocity layer limit (will be clamped to valid range after samples load)
         int velLayerLimit = xml->getIntAttribute("velocityLayerLimit", 99);
         samplerEngine.setVelocityLayerLimit(velLayerLimit);
+
+        // Restore round robin limit (will be clamped to valid range after samples load)
+        int rrLimit = xml->getIntAttribute("roundRobinLimit", 99);
+        samplerEngine.setRoundRobinLimit(rrLimit);
 
         // Restore sample folder
         juce::String folderPath = xml->getStringAttribute("sampleFolder", "");

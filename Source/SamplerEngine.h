@@ -86,6 +86,10 @@ public:
     void setVelocityLayerLimit(int limit) { velocityLayerLimit = juce::jlimit(1, juce::jmax(1, maxVelocityLayersGlobal), limit); }
     int getVelocityLayerLimit() const { return velocityLayerLimit; }
 
+    // Round robin limit (1 to maxRoundRobins)
+    void setRoundRobinLimit(int limit) { roundRobinLimit = juce::jlimit(1, juce::jmax(1, maxRoundRobins), limit); }
+    int getRoundRobinLimit() const { return roundRobinLimit; }
+
 private:
     // Parse note name to MIDI note number (e.g., "C4" -> 60, "G#6" -> 104)
     int parseNoteName(const juce::String& noteName) const;
@@ -118,6 +122,9 @@ private:
 
     // Velocity layer limit (user-adjustable, 1 to maxVelocityLayersGlobal)
     int velocityLayerLimit = 1;
+
+    // Round robin limit (user-adjustable, 1 to maxRoundRobins)
+    int roundRobinLimit = 1;
 
     // Streaming voices
     std::array<StreamingVoice, StreamingConstants::maxStreamingVoices> streamingVoices;

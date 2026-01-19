@@ -56,6 +56,8 @@ public:
     int getMaxVelocityLayersGlobal() const { return samplerEngine.getMaxVelocityLayersGlobal(); }
     void setVelocityLayerLimit(int limit) { samplerEngine.setVelocityLayerLimit(limit); }
     int getVelocityLayerLimit() const { return samplerEngine.getVelocityLayerLimit(); }
+    void setRoundRobinLimit(int limit) { samplerEngine.setRoundRobinLimit(limit); }
+    int getRoundRobinLimit() const { return samplerEngine.getRoundRobinLimit(); }
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }

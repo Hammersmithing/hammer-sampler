@@ -15,6 +15,7 @@ A JUCE-based VST3 plugin that displays MIDI input on a visual 88-key keyboard an
 - **Transpose** (-12 to +12 semitones) - shift output notes
 - **Sample Offset** (-12 to +12 semitones) - borrow samples from other notes with pitch correction for subtle timbre changes
 - **Velocity Layer Limit** - reduce velocity layers for lo-fi sound or lower data usage
+- **Round Robin Limit** - reduce round robin positions to lower CPU/disk usage
 - Sustain pedal support with visual feedback
 - Same-note voice stealing with 10ms crossfade
 
@@ -163,6 +164,23 @@ Reduces the number of velocity layers used for playback. The slider defaults to 
 - All velocities trigger the lowest velocity sample
 - Creates a consistent, lo-fi sound
 
+### Round Robin Limit
+
+Reduces the number of round robin positions cycled through during playback. The slider defaults to the maximum RR count detected in your sample library. Reducing it limits playback to fewer positions, lowering CPU and disk usage.
+
+**How it works:**
+- Limits cycling to positions 1 through N (where N is the limit)
+- Position N+1 and above are never used
+- Minimum is 1 (no round robin variation)
+
+**Example with 6 round robins limited to 2:**
+- Only positions 1 and 2 are used
+- Notes alternate: 1 → 2 → 1 → 2 → ...
+
+**Example limited to 1:**
+- All notes trigger the same round robin position
+- No variation, but minimal disk reads
+
 ## State Persistence
 
 The plugin saves its state when your DAW project is saved, including:
@@ -172,6 +190,7 @@ The plugin saves its state when your DAW project is saved, including:
 - **Transpose** - semitone offset
 - **Sample Offset** - sample borrowing offset
 - **Velocity Layer Limit** - reduced layer setting
+- **Round Robin Limit** - reduced RR cycling
 
 This means you can close a project and reopen it later with all your samples and settings intact.
 
@@ -188,7 +207,8 @@ State is stored as XML with the following structure:
                    sustain="0.7" release="0.3"
                    preloadSizeKB="64"
                    transpose="0" sampleOffset="0"
-                   velocityLayerLimit="4"/>
+                   velocityLayerLimit="4"
+                   roundRobinLimit="3"/>
 ```
 
 ## Async Sample Loading

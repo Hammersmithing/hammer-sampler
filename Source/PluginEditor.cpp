@@ -80,24 +80,24 @@ void NoteGridDisplay::paint(juce::Graphics& g)
             bool layerActive = layerExists && noteIsOn &&
                 ((remappedLayerIdx == actualLayerIdx) || processor.isNoteLayerActivated(midiNote, actualLayerIdx));
 
-            // Draw RR boxes within this layer cell (dynamic count based on loaded samples)
-            int maxRR = processor.getMaxRoundRobins();
-            float boxWidth = (noteWidth - (maxRR + 1) * boxGap) / static_cast<float>(maxRR);
+            // Draw RR boxes within this layer cell (limited by RR limit, scaled to fill)
+            int rrLimit = processor.getRoundRobinLimit();
+            float boxWidth = (noteWidth - (rrLimit + 1) * boxGap) / static_cast<float>(rrLimit);
             float boxHeight = layerHeight - 2 * boxGap;
 
-            for (int rr = 1; rr <= maxRR; ++rr)
+            for (int rr = 1; rr <= rrLimit; ++rr)
             {
                 float boxX = noteX + boxGap + (rr - 1) * (boxWidth + boxGap);
                 float boxY = layerY + boxGap;
                 juce::Rectangle<float> box(boxX, boxY, boxWidth, boxHeight);
 
                 // Check if this RR is active for this note in this layer
+                // Remap currentRR to the limited range
+                int remappedRR = (currentRR > 0 && currentRR <= rrLimit) ? currentRR : 0;
                 bool rrActive = false;
-                if (layerActive)
+                if (layerActive && remappedRR == rr)
                 {
-                    rrActive = (currentRR == rr && currentLayerIdx == actualLayerIdx) ||
-                               (processor.isNoteLayerActivated(midiNote, actualLayerIdx) &&
-                                processor.isNoteRRActivated(midiNote, rr));
+                    rrActive = true;
                 }
 
                 if (!noteAvailable || !layerExists)
@@ -395,6 +395,18 @@ MidiKeyboardEditor::MidiKeyboardEditor(MidiKeyboardProcessor& p)
     velLayerLimitLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
     addAndMakeVisible(velLayerLimitLabel);
 
+    // Round robin limit slider
+    rrLimitSlider.setSliderStyle(juce::Slider::RotaryVerticalDrag);
+    rrLimitSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 15);
+    rrLimitSlider.setRange(1, 3, 1);  // Will be updated when samples load
+    rrLimitSlider.setValue(processorRef.getRoundRobinLimit());
+    rrLimitSlider.onValueChange = [this] { updateRRLimit(); };
+    addAndMakeVisible(rrLimitSlider);
+
+    rrLimitLabel.setJustificationType(juce::Justification::centred);
+    rrLimitLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    addAndMakeVisible(rrLimitLabel);
+
     // Start timer for async loading status updates
     startTimerHz(10);
 
@@ -443,6 +455,14 @@ void MidiKeyboardEditor::timerCallback()
             {
                 velLayerLimitSlider.setRange(1, maxVelLayers, 1);
                 velLayerLimitSlider.setValue(processorRef.getVelocityLayerLimit(), juce::dontSendNotification);
+            }
+
+            // Update round robin limit slider range based on loaded samples
+            int maxRR = processorRef.getMaxRoundRobins();
+            if (maxRR > 0)
+            {
+                rrLimitSlider.setRange(1, maxRR, 1);
+                rrLimitSlider.setValue(processorRef.getRoundRobinLimit(), juce::dontSendNotification);
             }
         }
         else if (!processorRef.areSamplesLoading())
@@ -497,6 +517,11 @@ void MidiKeyboardEditor::updateSampleOffset()
 void MidiKeyboardEditor::updateVelLayerLimit()
 {
     processorRef.setVelocityLayerLimit(static_cast<int>(velLayerLimitSlider.getValue()));
+}
+
+void MidiKeyboardEditor::updateRRLimit()
+{
+    processorRef.setRoundRobinLimit(static_cast<int>(rrLimitSlider.getValue()));
 }
 
 void MidiKeyboardEditor::preloadSliderChanged()
@@ -623,6 +648,14 @@ void MidiKeyboardEditor::resized()
     auto velLayerLimitArea = adsrArea.removeFromLeft(70);
     velLayerLimitLabel.setBounds(velLayerLimitArea.removeFromTop(labelHeight));
     velLayerLimitSlider.setBounds(velLayerLimitArea);
+
+    // Add some spacing before RR limit knob
+    adsrArea.removeFromLeft(20);
+
+    // Round robin limit knob
+    auto rrLimitArea = adsrArea.removeFromLeft(70);
+    rrLimitLabel.setBounds(rrLimitArea.removeFromTop(labelHeight));
+    rrLimitSlider.setBounds(rrLimitArea);
 
     bounds.removeFromTop(gap);
 

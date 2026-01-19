@@ -456,6 +456,7 @@ void SamplerEngine::loadSamplesInBackground(const juce::String& folderPath)
     }
     maxVelocityLayersGlobal = tempMaxVelLayers;
     velocityLayerLimit = maxVelocityLayersGlobal;  // Default to max
+    roundRobinLimit = maxRoundRobins;  // Default to max
 
     engineDebugLog("Loaded " + juce::String(streamingSamples.size()) + " samples");
     engineDebugLog("Max round-robins: " + juce::String(maxRoundRobins));

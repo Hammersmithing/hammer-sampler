@@ -89,6 +89,11 @@ private:
     juce::Label velLayerLimitLabel{"", "Vel Layers"};
     void updateVelLayerLimit();
 
+    // Round robin limit control
+    juce::Slider rrLimitSlider;
+    juce::Label rrLimitLabel{"", "RR Limit"};
+    void updateRRLimit();
+
     // Async loading state
     juce::String pendingLoadFolder;
 
