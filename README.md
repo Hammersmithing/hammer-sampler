@@ -16,6 +16,7 @@ A JUCE-based VST3 plugin that displays MIDI input on a visual 88-key keyboard an
 - **Sample Offset** (-12 to +12 semitones) - borrow samples from other notes with pitch correction for subtle timbre changes
 - **Velocity Layer Limit** - reduce velocity layers for lo-fi sound or lower data usage
 - **Round Robin Limit** - reduce round robin positions to lower CPU/disk usage
+- **Selective Sample Preloading** - RAM scales with limits (lower limits = less RAM used)
 - Sustain pedal support with visual feedback
 - Polyphonic same-note retrigger for realistic piano behavior (see Voice Stealing section)
 
@@ -221,6 +222,33 @@ Reduces the number of round robin positions cycled through during playback. The 
 - All notes trigger the same round robin position
 - No variation, but minimal disk reads
 
+### Selective Sample Preloading
+
+The Velocity Layer Limit and RR Limit controls don't just affect playback - they also control which samples are loaded into RAM. Only samples within the current limits are preloaded, dramatically reducing memory usage when limits are lowered.
+
+**How it works:**
+- When you change Vel Layers or RR Limit, samples outside those limits are unloaded from RAM
+- Samples newly within limits are loaded on demand
+- The RAM display updates in real-time to show current memory usage
+- All sample metadata stays in memory (only preload buffers are loaded/unloaded)
+
+**RAM Usage Example (2376 sample piano library, 64KB preload):**
+
+| Vel Layers | RR Limit | Samples Loaded | Preload RAM |
+|------------|----------|----------------|-------------|
+| 9 (max) | 3 (max) | 2,376 | ~74 MB |
+| 5 | 3 | 1,320 | ~42 MB |
+| 1 | 3 | 264 | ~8.4 MB |
+| 1 | 1 | 88 | ~2.8 MB |
+
+**Benefits:**
+- **Live performance**: Set limits low for minimal RAM footprint
+- **Resource-constrained systems**: Run large libraries on limited RAM
+- **Quick previewing**: Load minimal samples for fast auditioning
+- **Dynamic adjustment**: Increase limits when you need more expression, decrease for efficiency
+
+**Note:** When you increase limits, samples are loaded from disk on demand. There may be a brief moment before newly-loaded samples are available for playback.
+
 ### Same-Note Release Time (SN Rel)
 
 Controls the release time for existing voices when the same note is retriggered. This is separate from the main ADSR Release control.
@@ -239,20 +267,21 @@ This control lets you experiment with the "feel" of same-note retriggering to fi
 
 ### Data Reduction Strategy
 
-The Velocity Layer Limit and RR Limit can be combined to drastically reduce disk I/O and CPU usage:
+The Velocity Layer Limit and RR Limit can be combined to drastically reduce disk I/O, CPU usage, and RAM footprint:
 
-| Configuration | Effect |
-|---------------|--------|
-| Full layers + Full RR | Maximum quality, highest disk usage |
-| Reduced layers + Full RR | Simpler dynamics, natural variation |
-| Full layers + Reduced RR | Full dynamics, less variation |
-| 1 layer + 1 RR | Minimal disk reads, consistent sound |
+| Configuration | Disk I/O | RAM Usage | Sound |
+|---------------|----------|-----------|-------|
+| Full layers + Full RR | Maximum | Maximum | Highest quality |
+| Reduced layers + Full RR | Medium | Medium | Simpler dynamics, natural variation |
+| Full layers + Reduced RR | Medium | Medium | Full dynamics, less variation |
+| 1 layer + 1 RR | Minimal | Minimal | Consistent, lo-fi |
 
 **Use cases:**
-- **Live performance**: Reduce limits to ensure no disk dropouts
+- **Live performance**: Reduce limits for minimal RAM and no disk dropouts
 - **Lo-fi aesthetic**: Use 1-2 velocity layers for a vintage sampler sound
+- **RAM-limited systems**: Use minimal limits to load huge libraries on limited RAM
 - **CPU-limited systems**: Reduce RR to minimize concurrent disk reads
-- **Quick sketching**: Minimal settings for fast response
+- **Quick sketching**: Minimal settings for fast response and minimal memory
 
 ## Voice Stealing
 
@@ -335,11 +364,15 @@ The sampler uses Direct From Disk streaming to enable massive sample libraries (
 
 ### RAM Usage
 
+Base RAM usage (all samples loaded at 64KB preload):
+
 | Library Size | Samples | Preload Memory (64KB) |
 |--------------|---------|----------------------|
 | 1 GB | ~1000 | ~64 MB |
 | 10 GB | ~5000 | ~320 MB |
 | 100 GB | ~50000 | ~3.2 GB |
+
+**With Selective Preloading:** Actual RAM usage scales with Velocity Layer and RR Limit settings. For example, a 100GB library with 9 velocity layers and 3 round robins could use as little as ~120 MB with limits set to 1 layer and 1 RR (only 88 samples loaded for a piano).
 
 ## Architecture
 
