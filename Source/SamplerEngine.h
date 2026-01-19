@@ -90,6 +90,10 @@ public:
     void setRoundRobinLimit(int limit) { roundRobinLimit = juce::jlimit(1, juce::jmax(1, maxRoundRobins), limit); }
     int getRoundRobinLimit() const { return roundRobinLimit; }
 
+    // Same-note retrigger release time (for experimentation)
+    void setSameNoteReleaseTime(float seconds) { sameNoteReleaseTime = juce::jlimit(0.01f, 5.0f, seconds); }
+    float getSameNoteReleaseTime() const { return sameNoteReleaseTime; }
+
 private:
     // Parse note name to MIDI note number (e.g., "C4" -> 60, "G#6" -> 104)
     int parseNoteName(const juce::String& noteName) const;
@@ -125,6 +129,11 @@ private:
 
     // Round robin limit (user-adjustable, 1 to maxRoundRobins)
     int roundRobinLimit = 1;
+
+    // Polyphonic same-note: max voices allowed per note before oldest is faded out
+    static constexpr int maxVoicesPerNote = 4;
+    uint64_t voiceStartCounterGlobal = 0;  // Incremented each time a voice starts
+    float sameNoteReleaseTime = 0.3f;      // Release time for same-note retrigger (seconds)
 
     // Streaming voices
     std::array<StreamingVoice, StreamingConstants::maxStreamingVoices> streamingVoices;

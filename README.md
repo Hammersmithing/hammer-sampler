@@ -17,7 +17,7 @@ A JUCE-based VST3 plugin that displays MIDI input on a visual 88-key keyboard an
 - **Velocity Layer Limit** - reduce velocity layers for lo-fi sound or lower data usage
 - **Round Robin Limit** - reduce round robin positions to lower CPU/disk usage
 - Sustain pedal support with visual feedback
-- Same-note voice stealing with 10ms crossfade (see Voice Stealing section for details)
+- Polyphonic same-note retrigger for realistic piano behavior (see Voice Stealing section)
 
 ## Sample Folder Setup
 
@@ -110,11 +110,16 @@ The grid above the keyboard shows:
 - **Cells**: Round-robin boxes per velocity layer (scales based on RR limit)
 
 **Grid colors:**
-- **Blue**: Active velocity layer and round-robin position
-- **Dim blue**: Active velocity layer, different round-robin
+- **Blue**: Active (velocity layer, round-robin) combination that was triggered
 - **Dark grey**: Available but not active
 - **Very dark grey**: Unavailable (no samples for this note/layer)
 - **Orange dash**: Exact velocity position (only on currently pressed notes)
+
+**Accurate Same-Note Tracking:** The grid accurately tracks which specific (velocity layer, round-robin) combinations have been triggered for each note. When you hit the same note multiple times with the sustain pedal held:
+- Each hit lights up its own specific (layer, RR) cell
+- Different velocities trigger different velocity layers
+- Round-robin cycles through positions
+- All active combinations remain lit until the note is fully released
 
 **Dynamic Scaling:** The grid automatically rescales when you adjust the Velocity Layer Limit or RR Limit sliders. With fewer layers/positions, each cell grows larger to fill the space, making it easier to see activity.
 
@@ -147,6 +152,7 @@ All rotary knobs use **horizontal drag** (left/right) to adjust values. The cont
 | **Sample Ofs** | -12 to +12 | Sample borrowing with pitch correction |
 | **Vel Layers** | 1 to max | Limit velocity layers used |
 | **RR Limit** | 1 to max | Limit round-robin positions |
+| **SN Rel** | 0.01 - 5.0s | Same-note release time (see below) |
 
 ### Status Display
 
@@ -215,6 +221,22 @@ Reduces the number of round robin positions cycled through during playback. The 
 - All notes trigger the same round robin position
 - No variation, but minimal disk reads
 
+### Same-Note Release Time (SN Rel)
+
+Controls the release time for existing voices when the same note is retriggered. This is separate from the main ADSR Release control.
+
+**How it works:**
+- When you press a note that's already playing, old voices enter their release phase
+- SN Rel controls how long that release takes (0.01 to 5.0 seconds)
+- The main Release knob controls note-off release as usual
+
+**Use cases:**
+- **Short (0.1s)**: Quick fade, more separation between retriggered notes
+- **Medium (0.3s)**: Natural piano-like behavior (default)
+- **Long (1.0s+)**: Lush, overlapping sound with gentle decay
+
+This control lets you experiment with the "feel" of same-note retriggering to find the optimal setting for your playing style and sample library.
+
 ### Data Reduction Strategy
 
 The Velocity Layer Limit and RR Limit can be combined to drastically reduce disk I/O and CPU usage:
@@ -234,39 +256,33 @@ The Velocity Layer Limit and RR Limit can be combined to drastically reduce disk
 
 ## Voice Stealing
 
-### Current Behavior
+### Polyphonic Same-Note (Realistic Piano Behavior)
 
-When the same note is retriggered (e.g., pressing C4 while C4 is already playing), the old voice is crossfaded out over 10ms while the new voice fades in. This prevents clicks but can create artifacts in certain scenarios.
+When the same note is retriggered (e.g., pressing C4 while C4 is already playing), the sampler uses polyphonic same-note behavior for realistic piano sound:
 
-### The Loud-to-Soft Retrigger Problem
+1. **Old voices transition to release** - existing voices for that note enter their ADSR release phase
+2. **New voice starts fresh** - the new note plays with its full attack envelope
+3. **Both coexist temporarily** - the old sound decays naturally while the new attack plays
 
-If you play a note loudly (velocity 127) and immediately retrigger it softly (velocity 1), the crossfade blends the loud sample into the soft sample, creating an unnatural "sipping" sound as volume rapidly drops. Real pianos don't behave this way.
+This mimics real piano physics where:
+- The damper lifts before the hammer strikes
+- The already-vibrating string continues momentarily
+- The new strike adds its own energy without instantly stopping the old vibration
+- A soft restrike on a ringing string blends naturally with the existing sound
 
-**Real piano physics:**
-1. The damper lifts before the hammer strikes
-2. The already-vibrating string continues momentarily
-3. The hammer strikes a string that's already in motion
-4. The existing vibration doesn't instantly stop - it interacts with the new strike
-5. A soft restrike on a ringing string doesn't produce a sudden volume drop
+### Per-Note Voice Limit
 
-### Planned Improvement: Polyphonic Same-Note
+To prevent runaway polyphony from rapid retriggering, each note is limited to **4 concurrent voices**. When exceeded:
+- The **oldest voice** for that note is faded out with a 10ms crossfade (no clicks)
+- The new voice starts normally
 
-The most realistic solution is polyphonic same-note with natural release transition:
+### Global Voice Stealing
 
-1. When the same note is retriggered, the **old voice** transitions to its release phase (as if the key was released) and continues its natural decay
-2. The **new voice** starts fresh with its attack phase
-3. Both voices coexist temporarily - the old fades naturally while the new plays
+When all 180 voices are in use:
+- The globally oldest voice (across all notes) is faded out with 10ms crossfade
+- The new voice takes its place
 
-This mimics real piano behavior where the damper lifts, the vibrating string continues, and the new strike adds its own energy. You hear both the tail of the old vibration and the new attack blended naturally.
-
-**Implementation considerations:**
-- Remove same-note voice stealing entirely - treat retriggered notes as new voices
-- Trigger `noteOff` on existing voices for that note (sends them to release phase)
-- Start a new voice for the incoming note
-- Add a configurable max voices per note (e.g., 2-4) to prevent runaway voice count
-- Oldest voice gets killed if limit exceeded
-
-**Trade-off:** Uses more voices and CPU, but produces more realistic piano behavior. Most users won't rapidly retrigger the same note constantly, so the impact is minimal in typical use.
+**Trade-off:** Uses more voices than simple voice stealing, but produces much more realistic piano behavior. The per-note limit of 4 prevents excessive CPU usage from rapid same-note retriggering.
 
 ## State Persistence
 
@@ -278,6 +294,7 @@ The plugin saves its state when your DAW project is saved, including:
 - **Sample Offset** - sample borrowing offset
 - **Velocity Layer Limit** - reduced layer setting
 - **Round Robin Limit** - reduced RR cycling
+- **Same-Note Release** - SN Rel time for same-note retriggering
 
 This means you can close a project and reopen it later with all your samples and settings intact.
 
@@ -295,7 +312,8 @@ State is stored as XML with the following structure:
                    preloadSizeKB="64"
                    transpose="0" sampleOffset="0"
                    velocityLayerLimit="4"
-                   roundRobinLimit="3"/>
+                   roundRobinLimit="3"
+                   sameNoteRelease="0.3"/>
 ```
 
 ## Async Sample Loading
@@ -512,7 +530,6 @@ Potential features to implement:
 - **Per-note panning** - Stereo spread across the keyboard range
 
 ### Engine Improvements
-- **Polyphonic same-note retrigger** - Allow multiple voices of the same note to coexist for realistic piano behavior (see Voice Stealing section)
 - **Sample rate conversion** - Resample on-the-fly if samples don't match host rate
 - **Legato mode** - Monophonic playing with glide
 

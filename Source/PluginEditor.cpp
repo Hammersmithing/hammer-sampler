@@ -48,7 +48,6 @@ void NoteGridDisplay::paint(juce::Graphics& g)
 
         // Get current state for this note
         int currentLayerIdx = processor.getNoteVelocityLayerIndex(midiNote);
-        int currentRR = processor.getNoteRoundRobin(midiNote);
         bool noteAvailable = processor.isNoteAvailable(midiNote);
         bool noteIsOn = processor.isNoteOn(midiNote);
 
@@ -64,21 +63,7 @@ void NoteGridDisplay::paint(juce::Graphics& g)
             // Check if this layer exists for this note
             bool layerExists = (actualLayerIdx >= 0 && actualLayerIdx < noteLayers);
 
-            // Remap current layer index to the limited display range
-            // When velocity is redistributed across fewer layers, we need to map the original
-            // layer index to where it would appear in the limited view
-            int remappedLayerIdx = -1;
-            if (currentLayerIdx >= 0 && numLayers > 0)
-            {
-                // Map the original layer to the limited range using same logic as playback
-                int velocity = processor.getNoteVelocity(midiNote);
-                if (velocity > 0)
-                    remappedLayerIdx = ((velocity - 1) * noteLayers) / 127;
-            }
-
-            // Check if this layer is active for this note
-            bool layerActive = layerExists && noteIsOn &&
-                ((remappedLayerIdx == actualLayerIdx) || processor.isNoteLayerActivated(midiNote, actualLayerIdx));
+            // Note: We no longer need remappedLayerIdx for display since we track exact (layer, RR) combos
 
             // Draw RR boxes within this layer cell (limited by RR limit, scaled to fill)
             int rrLimit = processor.getRoundRobinLimit();
@@ -91,23 +76,21 @@ void NoteGridDisplay::paint(juce::Graphics& g)
                 float boxY = layerY + boxGap;
                 juce::Rectangle<float> box(boxX, boxY, boxWidth, boxHeight);
 
-                // Check if this RR is active for this note in this layer
-                // Remap currentRR to the limited range
-                int remappedRR = (currentRR > 0 && currentRR <= rrLimit) ? currentRR : 0;
+                // Check if this specific (layer, RR) combination was triggered
+                // This properly tracks which RR was used at which velocity layer
                 bool rrActive = false;
-                if (layerActive && remappedRR == rr)
+                if (noteIsOn && layerExists)
                 {
-                    rrActive = true;
+                    // Check if this exact (layer, RR) combination was activated
+                    rrActive = processor.isNoteLayerRRActivated(midiNote, actualLayerIdx, rr);
                 }
 
                 if (!noteAvailable || !layerExists)
                     g.setColour(juce::Colour(0xff252525));  // Very dark gray for unavailable
                 else if (rrActive)
-                    g.setColour(juce::Colour(0xff4a9eff));  // Blue when active
-                else if (layerActive)
-                    g.setColour(juce::Colour(0xff2a5a8f));  // Dimmer blue for active layer
+                    g.setColour(juce::Colour(0xff4a9eff));  // Blue - this (layer, RR) was triggered
                 else
-                    g.setColour(juce::Colour(0xff3d3d3d));  // Dark gray
+                    g.setColour(juce::Colour(0xff3d3d3d));  // Dark gray - available but not triggered
 
                 g.fillRect(box);
                 g.setColour(juce::Colour(0xff222222));
@@ -415,6 +398,19 @@ MidiKeyboardEditor::MidiKeyboardEditor(MidiKeyboardProcessor& p)
     rrLimitLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
     addAndMakeVisible(rrLimitLabel);
 
+    // Same-note release time slider (for experimentation)
+    sameNoteReleaseSlider.setSliderStyle(juce::Slider::RotaryHorizontalDrag);
+    sameNoteReleaseSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 15);
+    sameNoteReleaseSlider.setRange(0.01, 5.0, 0.01);
+    sameNoteReleaseSlider.setValue(processorRef.getSameNoteReleaseTime());
+    sameNoteReleaseSlider.setTextValueSuffix(" s");
+    sameNoteReleaseSlider.onValueChange = [this] { updateSameNoteRelease(); };
+    addAndMakeVisible(sameNoteReleaseSlider);
+
+    sameNoteReleaseLabel.setJustificationType(juce::Justification::centred);
+    sameNoteReleaseLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    addAndMakeVisible(sameNoteReleaseLabel);
+
     // Start timer for async loading status updates
     startTimerHz(10);
 
@@ -530,6 +526,11 @@ void MidiKeyboardEditor::updateVelLayerLimit()
 void MidiKeyboardEditor::updateRRLimit()
 {
     processorRef.setRoundRobinLimit(static_cast<int>(rrLimitSlider.getValue()));
+}
+
+void MidiKeyboardEditor::updateSameNoteRelease()
+{
+    processorRef.setSameNoteReleaseTime(static_cast<float>(sameNoteReleaseSlider.getValue()));
 }
 
 void MidiKeyboardEditor::preloadSliderChanged()
@@ -664,6 +665,14 @@ void MidiKeyboardEditor::resized()
     auto rrLimitArea = adsrArea.removeFromLeft(70);
     rrLimitLabel.setBounds(rrLimitArea.removeFromTop(labelHeight));
     rrLimitSlider.setBounds(rrLimitArea);
+
+    // Add some spacing before same-note release knob
+    adsrArea.removeFromLeft(20);
+
+    // Same-note release knob
+    auto sameNoteReleaseArea = adsrArea.removeFromLeft(70);
+    sameNoteReleaseLabel.setBounds(sameNoteReleaseArea.removeFromTop(labelHeight));
+    sameNoteReleaseSlider.setBounds(sameNoteReleaseArea);
 
     bounds.removeFromTop(gap);
 

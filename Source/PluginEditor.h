@@ -94,6 +94,11 @@ private:
     juce::Label rrLimitLabel{"", "RR Limit"};
     void updateRRLimit();
 
+    // Same-note release time control (for experimentation)
+    juce::Slider sameNoteReleaseSlider;
+    juce::Label sameNoteReleaseLabel{"", "SN Rel"};
+    void updateSameNoteRelease();
+
     // Async loading state
     juce::String pendingLoadFolder;
 

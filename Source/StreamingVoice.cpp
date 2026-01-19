@@ -31,7 +31,7 @@ void StreamingVoice::setADSRParameters(const juce::ADSR::Parameters& params)
     adsr.setParameters(params);
 }
 
-void StreamingVoice::startVoice(const PreloadedSample* sample, int midiNote, float vel, double hostSampleRate)
+void StreamingVoice::startVoice(const PreloadedSample* sample, int midiNote, float vel, double hostSampleRate, uint64_t startCounter)
 {
     if (sample == nullptr || !sample->isValid())
         return;
@@ -39,6 +39,7 @@ void StreamingVoice::startVoice(const PreloadedSample* sample, int midiNote, flo
     currentSample = sample;
     playingNote = midiNote;
     velocity = vel;
+    voiceStartCounter = startCounter;
 
     // Calculate pitch ratio based on root note
     double frequencyOfNote = juce::MidiMessage::getMidiNoteInHertz(midiNote);
@@ -111,6 +112,16 @@ void StreamingVoice::stopVoice(bool allowTailOff)
     }
 }
 
+void StreamingVoice::stopVoiceWithCustomRelease(float releaseSeconds, double sampleRate)
+{
+    // Temporarily modify the ADSR release time for same-note retrigger
+    auto params = adsr.getParameters();
+    params.release = juce::jmax(0.001f, releaseSeconds);
+    adsr.setParameters(params);
+    adsr.setSampleRate(sampleRate);
+    adsr.noteOff();
+}
+
 void StreamingVoice::startQuickFadeOut(double sampleRate)
 {
     // 10ms quick fade for same-note voice stealing
@@ -132,6 +143,7 @@ void StreamingVoice::reset()
     isQuickFading = false;
     quickFadeLevel = 1.0f;
     quickFadeDecrement = 0.0f;
+    voiceStartCounter = 0;
 }
 
 void StreamingVoice::noteReleasedWithPedal(bool pedalDown)

@@ -59,6 +59,10 @@ public:
     void setRoundRobinLimit(int limit) { samplerEngine.setRoundRobinLimit(limit); }
     int getRoundRobinLimit() const { return samplerEngine.getRoundRobinLimit(); }
 
+    // Same-note retrigger release time (for experimentation)
+    void setSameNoteReleaseTime(float seconds) { samplerEngine.setSameNoteReleaseTime(seconds); }
+    float getSameNoteReleaseTime() const { return samplerEngine.getSameNoteReleaseTime(); }
+
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
@@ -108,6 +112,15 @@ public:
         return noteRRActivated[idx][static_cast<size_t>(rrPosition)];
     }
 
+    // Check if a specific (layer, RR) combination was triggered for this note
+    bool isNoteLayerRRActivated(int midiNote, int layerIndex, int rrPosition) const
+    {
+        auto idx = static_cast<size_t>(midiNote);
+        if (layerIndex < 0 || layerIndex >= maxVelocityLayers) return false;
+        if (rrPosition < 0 || rrPosition > maxRoundRobinPositions) return false;
+        return noteLayerRRActivated[idx][static_cast<size_t>(layerIndex)][static_cast<size_t>(rrPosition)];
+    }
+
 private:
     static constexpr int maxVelocityLayers = 8;  // Max velocity layers we support in UI
 
@@ -118,6 +131,7 @@ private:
     std::array<std::array<bool, maxVelocityLayers>, 128> noteLayersActivated{};  // Per-note: which layers activated
     static constexpr int maxRoundRobinPositions = 16;  // Max RR positions we support
     std::array<std::array<bool, maxRoundRobinPositions + 1>, 128> noteRRActivated{};  // Per-note: which RR positions activated (index 1-N)
+    std::array<std::array<std::array<bool, maxRoundRobinPositions + 1>, maxVelocityLayers>, 128> noteLayerRRActivated{};  // Per-note: which (layer, RR) combos activated
     int currentRoundRobin = 1;  // Next RR position to assign (cycles 1->2->3->1)
     bool sustainPedalDown = false;
     int transposeAmount = 0;      // -12 to +12 semitones

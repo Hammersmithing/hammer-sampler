@@ -21,10 +21,15 @@ public:
     ~StreamingVoice();
 
     // Voice lifecycle (called from audio thread)
-    void startVoice(const PreloadedSample* sample, int midiNote, float velocity, double hostSampleRate);
+    void startVoice(const PreloadedSample* sample, int midiNote, float velocity, double hostSampleRate, uint64_t startCounter = 0);
     void stopVoice(bool allowTailOff);
-    void startQuickFadeOut(double sampleRate);  // 10ms fade for same-note stealing
+    void stopVoiceWithCustomRelease(float releaseSeconds, double sampleRate);  // For same-note retrigger
+    void startQuickFadeOut(double sampleRate);  // 10ms fade for voice stealing
     void reset();
+
+    // Voice age tracking (for polyphonic same-note limit)
+    uint64_t getVoiceStartCounter() const { return voiceStartCounter; }
+    bool isQuickFadingOut() const { return isQuickFading; }
 
     // Audio thread interface
     void renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples);
@@ -93,6 +98,7 @@ private:
     float velocity = 0.0f;
     double pitchRatio = 1.0;
     double sourceSamplePosition = 0.0;  // Fractional position for interpolation
+    uint64_t voiceStartCounter = 0;     // For tracking voice age (polyphonic same-note)
 
     // Envelope
     juce::ADSR adsr;

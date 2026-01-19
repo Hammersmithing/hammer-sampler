@@ -1,6 +1,7 @@
 #include "SamplerEngine.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 // Debug logging
 static void engineDebugLog(const juce::String& msg)
@@ -528,14 +529,52 @@ void SamplerEngine::noteOn(int midiNote, int velocity, int roundRobin, int sampl
     if (!ss)
         return;
 
-    // Same-note voice stealing with quick 10ms fadeout
+    // Polyphonic same-note: send existing voices to release phase (realistic piano behavior)
+    // This lets the old sound decay naturally while the new attack plays
     for (auto& voice : streamingVoices)
+    {
+        if (voice.isActive() && voice.getPlayingNote() == midiNote && !voice.isQuickFadingOut())
+        {
+            voice.stopVoiceWithCustomRelease(sameNoteReleaseTime, currentSampleRate);
+        }
+    }
+
+    // Count how many voices are currently playing this note
+    int voicesForThisNote = 0;
+    for (const auto& voice : streamingVoices)
     {
         if (voice.isActive() && voice.getPlayingNote() == midiNote)
         {
-            voice.startQuickFadeOut(currentSampleRate);
+            voicesForThisNote++;
         }
     }
+
+    // If we exceed the per-note limit, fade out the oldest voice with 10ms fade (no clicks)
+    if (voicesForThisNote >= maxVoicesPerNote)
+    {
+        uint64_t oldestCounter = UINT64_MAX;
+        StreamingVoice* oldestVoice = nullptr;
+
+        for (auto& voice : streamingVoices)
+        {
+            if (voice.isActive() && voice.getPlayingNote() == midiNote)
+            {
+                if (voice.getVoiceStartCounter() < oldestCounter)
+                {
+                    oldestCounter = voice.getVoiceStartCounter();
+                    oldestVoice = &voice;
+                }
+            }
+        }
+
+        if (oldestVoice != nullptr)
+        {
+            oldestVoice->startQuickFadeOut(currentSampleRate);
+        }
+    }
+
+    // Increment global voice counter for age tracking
+    ++voiceStartCounterGlobal;
 
     // Find a free streaming voice
     for (size_t i = 0; i < streamingVoices.size(); ++i)
@@ -550,21 +589,53 @@ void SamplerEngine::noteOn(int midiNote, int velocity, int roundRobin, int sampl
             streamingVoices[i].setADSRParameters(adsrJuceParams);
 
             streamingVoices[i].startVoice(&ss->preload, midiNote,
-                                           static_cast<float>(velocity) / 127.0f, currentSampleRate);
+                                           static_cast<float>(velocity) / 127.0f, currentSampleRate,
+                                           voiceStartCounterGlobal);
             return;
         }
     }
 
-    // No free voice - steal the first one
+    // No free voice - steal the oldest voice globally (with 10ms fade)
+    uint64_t oldestCounter = UINT64_MAX;
+    size_t oldestIndex = 0;
+
+    for (size_t i = 0; i < streamingVoices.size(); ++i)
+    {
+        if (streamingVoices[i].getVoiceStartCounter() < oldestCounter)
+        {
+            oldestCounter = streamingVoices[i].getVoiceStartCounter();
+            oldestIndex = i;
+        }
+    }
+
     juce::ADSR::Parameters adsrJuceParams;
     adsrJuceParams.attack = adsrParams.attack;
     adsrJuceParams.decay = adsrParams.decay;
     adsrJuceParams.sustain = adsrParams.sustain;
     adsrJuceParams.release = adsrParams.release;
-    streamingVoices[0].setADSRParameters(adsrJuceParams);
-    streamingVoices[0].stopVoice(false);
-    streamingVoices[0].startVoice(&ss->preload, midiNote,
-                                   static_cast<float>(velocity) / 127.0f, currentSampleRate);
+    streamingVoices[oldestIndex].setADSRParameters(adsrJuceParams);
+    streamingVoices[oldestIndex].startQuickFadeOut(currentSampleRate);
+
+    // Start the new voice after a brief delay would be ideal, but for simplicity
+    // we find another free voice or use a different slot
+    // Actually, let's just start it - the old voice will fade out
+    for (size_t i = 0; i < streamingVoices.size(); ++i)
+    {
+        if (!streamingVoices[i].isActive())
+        {
+            streamingVoices[i].setADSRParameters(adsrJuceParams);
+            streamingVoices[i].startVoice(&ss->preload, midiNote,
+                                           static_cast<float>(velocity) / 127.0f, currentSampleRate,
+                                           voiceStartCounterGlobal);
+            return;
+        }
+    }
+
+    // Still no free voice - force steal the oldest one immediately
+    streamingVoices[oldestIndex].stopVoice(false);
+    streamingVoices[oldestIndex].startVoice(&ss->preload, midiNote,
+                                             static_cast<float>(velocity) / 127.0f, currentSampleRate,
+                                             voiceStartCounterGlobal);
 }
 
 void SamplerEngine::noteOff(int midiNote)

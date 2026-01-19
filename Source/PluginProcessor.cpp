@@ -11,6 +11,9 @@ MidiKeyboardProcessor::MidiKeyboardProcessor()
     noteSustained.fill(false);
     for (auto& arr : noteLayersActivated) arr.fill(false);
     for (auto& arr : noteRRActivated) arr.fill(false);
+    for (auto& noteArr : noteLayerRRActivated)
+        for (auto& layerArr : noteArr)
+            layerArr.fill(false);
 }
 
 void MidiKeyboardProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
@@ -21,6 +24,9 @@ void MidiKeyboardProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
     noteSustained.fill(false);
     for (auto& arr : noteLayersActivated) arr.fill(false);
     for (auto& arr : noteRRActivated) arr.fill(false);
+    for (auto& noteArr : noteLayerRRActivated)
+        for (auto& layerArr : noteArr)
+            layerArr.fill(false);
     currentRoundRobin = 1;
     sustainPedalDown = false;
 
@@ -65,6 +71,8 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
                     }
                     noteLayersActivated[i].fill(false);
                     noteRRActivated[i].fill(false);
+                    for (auto& layerArr : noteLayerRRActivated[i])
+                        layerArr.fill(false);
                 }
             }
             sustainPedalDown = pedalNowDown;
@@ -86,11 +94,23 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
             int layerIdx = samplerEngine.getVelocityLayerIndex(midiNote, velocity);
             noteVelocityLayerIdx[noteIndex] = layerIdx;
 
-            // Mark per-note velocity layer and RR as activated if pedal is down
+            // Always mark RR as activated (for grid display of all playing voices)
+            if (currentRoundRobin > 0 && currentRoundRobin <= maxRoundRobinPositions)
+            {
+                noteRRActivated[noteIndex][static_cast<size_t>(currentRoundRobin)] = true;
+            }
+
+            // Mark velocity layer as activated (for sustain pedal persistence)
             if (sustainPedalDown && layerIdx >= 0 && layerIdx < maxVelocityLayers)
             {
                 noteLayersActivated[noteIndex][static_cast<size_t>(layerIdx)] = true;
-                noteRRActivated[noteIndex][static_cast<size_t>(currentRoundRobin)] = true;
+            }
+
+            // Track the specific (layer, RR) combination for accurate grid display
+            if (layerIdx >= 0 && layerIdx < maxVelocityLayers &&
+                currentRoundRobin > 0 && currentRoundRobin <= maxRoundRobinPositions)
+            {
+                noteLayerRRActivated[noteIndex][static_cast<size_t>(layerIdx)][static_cast<size_t>(currentRoundRobin)] = true;
             }
 
             // Trigger sample playback
@@ -109,10 +129,14 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
             }
             else
             {
-                // No pedal - release immediately
+                // No pedal - release immediately and clear all activations
                 noteVelocities[noteIndex] = 0;
                 noteVelocityLayerIdx[noteIndex] = -1;
                 noteRoundRobin[noteIndex] = 0;
+                noteLayersActivated[noteIndex].fill(false);
+                noteRRActivated[noteIndex].fill(false);
+                for (auto& layerArr : noteLayerRRActivated[noteIndex])
+                    layerArr.fill(false);
                 samplerEngine.noteOff(midiNote);
             }
         }
