@@ -74,6 +74,11 @@ private:
 
     void updateADSR();
 
+    // Transpose control
+    juce::Slider transposeSlider;
+    juce::Label transposeLabel{"", "Transpose"};
+    void updateTranspose();
+
     // Async loading state
     juce::String pendingLoadFolder;
 

@@ -71,8 +71,9 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
             continue;
         }
 
-        auto noteIndex = static_cast<size_t>(message.getNoteNumber());
-        int midiNote = message.getNoteNumber();
+        int originalNote = message.getNoteNumber();
+        int midiNote = juce::jlimit(0, 127, originalNote + transposeAmount);
+        auto noteIndex = static_cast<size_t>(midiNote);
 
         if (message.isNoteOn())
         {
@@ -143,6 +144,9 @@ void MidiKeyboardProcessor::getStateInformation(juce::MemoryBlock& destData)
     // Save preload size
     xml.setAttribute("preloadSizeKB", getPreloadSizeKB());
 
+    // Save transpose
+    xml.setAttribute("transpose", transposeAmount);
+
     copyXmlToBinary(xml, destData);
 }
 
@@ -163,6 +167,10 @@ void MidiKeyboardProcessor::setStateInformation(const void* data, int sizeInByte
         // Restore preload size
         int preloadSizeKB = xml->getIntAttribute("preloadSizeKB", 64);
         setPreloadSizeKB(preloadSizeKB);
+
+        // Restore transpose
+        int transpose = xml->getIntAttribute("transpose", 0);
+        setTranspose(transpose);
 
         // Restore sample folder
         juce::String folderPath = xml->getStringAttribute("sampleFolder", "");

@@ -36,6 +36,10 @@ public:
     void setADSR(float attack, float decay, float sustain, float release);
     ADSRParams getADSR() const { return samplerEngine.getADSR(); }
 
+    // Transpose control (-12 to +12 semitones)
+    void setTranspose(int semitones) { transposeAmount = juce::jlimit(-12, 12, semitones); }
+    int getTranspose() const { return transposeAmount; }
+
     // Sample configuration queries for UI
     bool isNoteAvailable(int midiNote) const { return samplerEngine.isNoteAvailable(midiNote); }
     bool noteHasOwnSamples(int midiNote) const { return samplerEngine.noteHasOwnSamples(midiNote); }
@@ -104,6 +108,7 @@ private:
     std::array<std::array<bool, 4>, 128> noteRRActivated{};     // Per-note: which RR positions activated (index 1-3)
     int currentRoundRobin = 1;  // Next RR position to assign (cycles 1->2->3->1)
     bool sustainPedalDown = false;
+    int transposeAmount = 0;  // -12 to +12 semitones
 
     SamplerEngine samplerEngine;
 

@@ -335,6 +335,18 @@ MidiKeyboardEditor::MidiKeyboardEditor(MidiKeyboardProcessor& p)
     preloadLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
     addAndMakeVisible(preloadLabel);
 
+    // Transpose slider
+    transposeSlider.setSliderStyle(juce::Slider::RotaryVerticalDrag);
+    transposeSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 15);
+    transposeSlider.setRange(-12, 12, 1);
+    transposeSlider.setValue(processorRef.getTranspose());
+    transposeSlider.onValueChange = [this] { updateTranspose(); };
+    addAndMakeVisible(transposeSlider);
+
+    transposeLabel.setJustificationType(juce::Justification::centred);
+    transposeLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    addAndMakeVisible(transposeLabel);
+
     // Start timer for async loading status updates
     startTimerHz(10);
 
@@ -414,6 +426,11 @@ void MidiKeyboardEditor::updateADSR()
         static_cast<float>(sustainSlider.getValue()),
         static_cast<float>(releaseSlider.getValue())
     );
+}
+
+void MidiKeyboardEditor::updateTranspose()
+{
+    processorRef.setTranspose(static_cast<int>(transposeSlider.getValue()));
 }
 
 void MidiKeyboardEditor::preloadSliderChanged()
@@ -516,6 +533,14 @@ void MidiKeyboardEditor::resized()
     auto preloadArea = adsrArea.removeFromLeft(70);
     preloadLabel.setBounds(preloadArea.removeFromTop(labelHeight));
     preloadSlider.setBounds(preloadArea);
+
+    // Add some spacing before transpose knob
+    adsrArea.removeFromLeft(20);
+
+    // Transpose knob
+    auto transposeArea = adsrArea.removeFromLeft(70);
+    transposeLabel.setBounds(transposeArea.removeFromTop(labelHeight));
+    transposeSlider.setBounds(transposeArea);
 
     bounds.removeFromTop(gap);
 
