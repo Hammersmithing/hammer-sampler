@@ -14,6 +14,7 @@ A JUCE-based VST3 plugin that displays MIDI input on a visual 88-key keyboard an
 - Global ADSR envelope controls
 - **Transpose** (-12 to +12 semitones) - shift output notes
 - **Sample Offset** (-12 to +12 semitones) - borrow samples from other notes with pitch correction for subtle timbre changes
+- **Velocity Layer Limit** - reduce velocity layers for lo-fi sound or lower data usage
 - Sustain pedal support with visual feedback
 - Same-note voice stealing with 10ms crossfade
 
@@ -145,6 +146,23 @@ A subtle sound design feature that borrows samples from a different note (-12 to
 **Combined example (Transpose +2, Sample Offset +1):**
 - Press C4 → target sound is D4 → uses D#4 sample → pitch-shifted down → sounds like D4 with D#4's timbre
 
+### Velocity Layer Limit
+
+Reduces the number of velocity layers used for playback. The slider defaults to the maximum number of layers detected in your sample library. Pulling it down limits playback to fewer layers, giving a more lo-fi sound and reducing data usage.
+
+**How it works:**
+- Removes the **highest** (loudest) velocity layers
+- Redistributes velocity ranges evenly across remaining layers
+- Minimum is 1 layer (all velocities trigger the same sample)
+
+**Example with 3 velocity layers (001, 080, 127) limited to 2:**
+- Keeps layers 001 and 080, removes 127
+- Velocity mapping: 1-64 → 001 sample, 65-127 → 080 sample
+
+**Example with 4 velocity layers limited to 1:**
+- All velocities trigger the lowest velocity sample
+- Creates a consistent, lo-fi sound
+
 ## State Persistence
 
 The plugin saves its state when your DAW project is saved, including:
@@ -153,6 +171,7 @@ The plugin saves its state when your DAW project is saved, including:
 - **Preload size** - streaming buffer configuration
 - **Transpose** - semitone offset
 - **Sample Offset** - sample borrowing offset
+- **Velocity Layer Limit** - reduced layer setting
 
 This means you can close a project and reopen it later with all your samples and settings intact.
 
@@ -168,7 +187,8 @@ State is stored as XML with the following structure:
                    attack="0.01" decay="0.1"
                    sustain="0.7" release="0.3"
                    preloadSizeKB="64"
-                   transpose="0" sampleOffset="0"/>
+                   transpose="0" sampleOffset="0"
+                   velocityLayerLimit="4"/>
 ```
 
 ## Async Sample Loading

@@ -446,8 +446,20 @@ void SamplerEngine::loadSamplesInBackground(const juce::String& folderPath)
     preloadMemoryBytes = tempPreloadMemory;
     maxRoundRobins = tempMaxRoundRobins;
 
+    // Calculate max velocity layers across all notes
+    int tempMaxVelLayers = 1;
+    for (const auto& [note, mapping] : noteMappings)
+    {
+        int layers = static_cast<int>(mapping.velocityLayers.size());
+        if (layers > tempMaxVelLayers)
+            tempMaxVelLayers = layers;
+    }
+    maxVelocityLayersGlobal = tempMaxVelLayers;
+    velocityLayerLimit = maxVelocityLayersGlobal;  // Default to max
+
     engineDebugLog("Loaded " + juce::String(streamingSamples.size()) + " samples");
     engineDebugLog("Max round-robins: " + juce::String(maxRoundRobins));
+    engineDebugLog("Max velocity layers: " + juce::String(maxVelocityLayersGlobal));
     engineDebugLog("Total file size: " + juce::String(tempTotalSize / (1024 * 1024)) + " MB");
     engineDebugLog("Preload memory: " + juce::String(tempPreloadMemory / 1024) + " KB");
 
@@ -472,26 +484,35 @@ const SamplerEngine::StreamingSample* SamplerEngine::findStreamingSample(int mid
         actualNote = it->second.fallbackNote;
     }
 
+    auto noteIt = noteMappings.find(actualNote);
+    if (noteIt == noteMappings.end())
+        return nullptr;
+
+    const auto& layers = noteIt->second.velocityLayers;
+    int totalLayers = static_cast<int>(layers.size());
+    if (totalLayers == 0)
+        return nullptr;
+
+    // Apply velocity layer limit (use first N layers, redistribute velocity evenly)
+    int effectiveLayers = std::min(velocityLayerLimit, totalLayers);
+
+    // Map incoming velocity (1-127) to limited layer index
+    // Evenly distribute: velocity 1-127 maps to layers 0 to (effectiveLayers-1)
+    int layerIndex = ((velocity - 1) * effectiveLayers) / 127;
+    layerIndex = juce::jlimit(0, effectiveLayers - 1, layerIndex);
+
+    // Get the velocity value of the target layer
+    int targetVelocity = layers[static_cast<size_t>(layerIndex)].velocityValue;
+
+    // Find the sample with matching note, velocity, and round-robin
     for (const auto& ss : streamingSamples)
     {
-        if (ss.midiNote != actualNote)
-            continue;
-
-        auto noteIt = noteMappings.find(actualNote);
-        if (noteIt == noteMappings.end())
-            continue;
-
-        for (const auto& layer : noteIt->second.velocityLayers)
+        if (ss.midiNote == actualNote && ss.velocity == targetVelocity)
         {
-            if (velocity >= layer.velocityRangeStart && velocity <= layer.velocityRangeEnd)
-            {
-                if (layer.velocityValue == ss.velocity)
-                {
-                    if (ss.roundRobin == roundRobin)
-                        return &ss;
-                    return &ss;
-                }
-            }
+            if (ss.roundRobin == roundRobin)
+                return &ss;
+            // If exact RR not found, return any matching sample
+            return &ss;
         }
     }
 

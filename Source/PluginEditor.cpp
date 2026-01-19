@@ -360,6 +360,18 @@ MidiKeyboardEditor::MidiKeyboardEditor(MidiKeyboardProcessor& p)
     sampleOffsetLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
     addAndMakeVisible(sampleOffsetLabel);
 
+    // Velocity layer limit slider
+    velLayerLimitSlider.setSliderStyle(juce::Slider::RotaryVerticalDrag);
+    velLayerLimitSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 15);
+    velLayerLimitSlider.setRange(1, 8, 1);  // Will be updated when samples load
+    velLayerLimitSlider.setValue(processorRef.getVelocityLayerLimit());
+    velLayerLimitSlider.onValueChange = [this] { updateVelLayerLimit(); };
+    addAndMakeVisible(velLayerLimitSlider);
+
+    velLayerLimitLabel.setJustificationType(juce::Justification::centred);
+    velLayerLimitLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    addAndMakeVisible(velLayerLimitLabel);
+
     // Start timer for async loading status updates
     startTimerHz(10);
 
@@ -401,6 +413,14 @@ void MidiKeyboardEditor::timerCallback()
             else
                 preloadStr = juce::String(preloadBytes) + " B";
             preloadMemLabel.setText("RAM: " + preloadStr, juce::dontSendNotification);
+
+            // Update velocity layer limit slider range based on loaded samples
+            int maxVelLayers = processorRef.getMaxVelocityLayersGlobal();
+            if (maxVelLayers > 0)
+            {
+                velLayerLimitSlider.setRange(1, maxVelLayers, 1);
+                velLayerLimitSlider.setValue(processorRef.getVelocityLayerLimit(), juce::dontSendNotification);
+            }
         }
         else if (!processorRef.areSamplesLoading())
         {
@@ -449,6 +469,11 @@ void MidiKeyboardEditor::updateTranspose()
 void MidiKeyboardEditor::updateSampleOffset()
 {
     processorRef.setSampleOffset(static_cast<int>(sampleOffsetSlider.getValue()));
+}
+
+void MidiKeyboardEditor::updateVelLayerLimit()
+{
+    processorRef.setVelocityLayerLimit(static_cast<int>(velLayerLimitSlider.getValue()));
 }
 
 void MidiKeyboardEditor::preloadSliderChanged()
@@ -567,6 +592,14 @@ void MidiKeyboardEditor::resized()
     auto sampleOffsetArea = adsrArea.removeFromLeft(70);
     sampleOffsetLabel.setBounds(sampleOffsetArea.removeFromTop(labelHeight));
     sampleOffsetSlider.setBounds(sampleOffsetArea);
+
+    // Add some spacing before velocity layer limit knob
+    adsrArea.removeFromLeft(20);
+
+    // Velocity layer limit knob
+    auto velLayerLimitArea = adsrArea.removeFromLeft(70);
+    velLayerLimitLabel.setBounds(velLayerLimitArea.removeFromTop(labelHeight));
+    velLayerLimitSlider.setBounds(velLayerLimitArea);
 
     bounds.removeFromTop(gap);
 

@@ -84,6 +84,11 @@ private:
     juce::Label sampleOffsetLabel{"", "Sample Ofs"};
     void updateSampleOffset();
 
+    // Velocity layer limit control
+    juce::Slider velLayerLimitSlider;
+    juce::Label velLayerLimitLabel{"", "Vel Layers"};
+    void updateVelLayerLimit();
+
     // Async loading state
     juce::String pendingLoadFolder;
 

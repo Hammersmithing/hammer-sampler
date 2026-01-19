@@ -80,6 +80,11 @@ public:
     int getMaxVelocityLayers(int startNote, int endNote) const;  // Max layers in range
     int getVelocityLayerIndex(int midiNote, int velocity) const;  // Index of layer for velocity (0-based)
     int getMaxRoundRobins() const { return maxRoundRobins; }  // Max RR positions found in samples
+    int getMaxVelocityLayersGlobal() const { return maxVelocityLayersGlobal; }  // Max velocity layers found across all notes
+
+    // Velocity layer limit (1 to maxVelocityLayersGlobal)
+    void setVelocityLayerLimit(int limit) { velocityLayerLimit = juce::jlimit(1, juce::jmax(1, maxVelocityLayersGlobal), limit); }
+    int getVelocityLayerLimit() const { return velocityLayerLimit; }
 
 private:
     // Parse note name to MIDI note number (e.g., "C4" -> 60, "G#6" -> 104)
@@ -107,6 +112,12 @@ private:
 
     // Max round-robin positions found in loaded samples
     int maxRoundRobins = 1;
+
+    // Max velocity layers found across all notes
+    int maxVelocityLayersGlobal = 1;
+
+    // Velocity layer limit (user-adjustable, 1 to maxVelocityLayersGlobal)
+    int velocityLayerLimit = 1;
 
     // Streaming voices
     std::array<StreamingVoice, StreamingConstants::maxStreamingVoices> streamingVoices;

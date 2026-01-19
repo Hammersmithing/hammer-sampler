@@ -151,6 +151,9 @@ void MidiKeyboardProcessor::getStateInformation(juce::MemoryBlock& destData)
     // Save sample offset
     xml.setAttribute("sampleOffset", sampleOffsetAmount);
 
+    // Save velocity layer limit
+    xml.setAttribute("velocityLayerLimit", samplerEngine.getVelocityLayerLimit());
+
     copyXmlToBinary(xml, destData);
 }
 
@@ -179,6 +182,10 @@ void MidiKeyboardProcessor::setStateInformation(const void* data, int sizeInByte
         // Restore sample offset
         int sampleOffset = xml->getIntAttribute("sampleOffset", 0);
         setSampleOffset(sampleOffset);
+
+        // Restore velocity layer limit (will be clamped to valid range after samples load)
+        int velLayerLimit = xml->getIntAttribute("velocityLayerLimit", 99);
+        samplerEngine.setVelocityLayerLimit(velLayerLimit);
 
         // Restore sample folder
         juce::String folderPath = xml->getStringAttribute("sampleFolder", "");
