@@ -114,15 +114,23 @@ The grid above the keyboard shows:
 - **Dim blue**: Active velocity layer, different round-robin
 - **Dark grey**: Available but not active
 - **Very dark grey**: Unavailable (no samples for this note/layer)
+- **Orange dash**: Exact velocity position (only on currently pressed notes)
 
 **Dynamic Scaling:** The grid automatically rescales when you adjust the Velocity Layer Limit or RR Limit sliders. With fewer layers/positions, each cell grows larger to fill the space, making it easier to see activity.
+
+**Orange Velocity Indicator:** An orange horizontal dash shows the precise velocity position within the grid for each currently pressed note. The dash spans across all RR boxes for visibility. Velocity 127 appears at the top, velocity 1 at the bottom.
 
 When a note is played:
 - The corresponding key lights up blue
 - The velocity layer row for that note activates
 - The round-robin box shows which position triggered
+- An orange dash shows the exact velocity position
 
-With sustain pedal held, all triggered states accumulate and persist until pedal release.
+**Sustained vs Pressed:** With sustain pedal held:
+- **Pressed notes**: Show blue boxes AND orange dash
+- **Sustained notes** (key released, pedal held): Show blue boxes only (no orange dash)
+
+This distinction helps you see which keys are actively being pressed versus which are being held by the sustain pedal.
 
 ### UI Controls
 
