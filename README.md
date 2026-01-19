@@ -1,4 +1,4 @@
-# MIDI Keyboard Display & Sampler
+# Hammer Sampler
 
 A JUCE-based VST3 plugin that displays MIDI input on a visual 88-key keyboard and plays back samples using Direct From Disk (DFD) streaming. Designed for large sample libraries (100GB+) that exceed available RAM.
 
@@ -164,7 +164,7 @@ The plugin implements the VST3/AU state persistence API:
 
 State is stored as XML with the following structure:
 ```xml
-<MidiKeyboardState sampleFolder="/path/to/samples"
+<HammerSamplerState sampleFolder="/path/to/samples"
                    attack="0.01" decay="0.1"
                    sustain="0.7" release="0.3"
                    preloadSizeKB="64"
@@ -339,9 +339,9 @@ cmake ..
 cmake --build . --config Release
 ```
 
-Output plugins are in `build/MidiKeyboardDisplay_artefacts/Debug/`:
-- `VST3/MIDI Keyboard Display.vst3`
-- `Standalone/MIDI Keyboard Display.app`
+Output plugins are in `build/HammerSampler_artefacts/Debug/`:
+- `VST3/Hammer Sampler.vst3`
+- `Standalone/Hammer Sampler.app`
 
 ### Installation
 
@@ -349,7 +349,7 @@ Copy the built plugin to your system plugin folder:
 
 **macOS:**
 ```bash
-cp -R build/MidiKeyboardDisplay_artefacts/Debug/VST3/*.vst3 ~/Library/Audio/Plug-Ins/VST3/
+cp -R build/HammerSampler_artefacts/Debug/VST3/*.vst3 ~/Library/Audio/Plug-Ins/VST3/
 ```
 
 ## Example Sample Library Structure

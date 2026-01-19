@@ -130,7 +130,7 @@ juce::AudioProcessorEditor* MidiKeyboardProcessor::createEditor()
 void MidiKeyboardProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     // Save plugin state as XML
-    juce::XmlElement xml("MidiKeyboardState");
+    juce::XmlElement xml("HammerSamplerState");
 
     // Save sample folder path
     xml.setAttribute("sampleFolder", getLoadedFolderPath());
@@ -159,7 +159,7 @@ void MidiKeyboardProcessor::setStateInformation(const void* data, int sizeInByte
     // Restore plugin state from XML
     auto xml = getXmlFromBinary(data, sizeInBytes);
 
-    if (xml != nullptr && xml->hasTagName("MidiKeyboardState"))
+    if (xml != nullptr && xml->hasTagName("HammerSamplerState"))
     {
         // Restore ADSR parameters
         float attack = static_cast<float>(xml->getDoubleAttribute("attack", 0.01));
