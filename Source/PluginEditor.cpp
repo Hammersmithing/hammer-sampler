@@ -212,7 +212,7 @@ void KeyboardDisplay::paint(juce::Graphics& g)
         {
             // Find position: black key sits between white keys
             int whiteKeyBefore = getWhiteKeyIndex(midiNote);
-            float x = keyboardBounds.getX() + whiteKeyBefore * whiteKeyWidth + whiteKeyWidth - blackKeyWidth / 2;
+            float x = keyboardBounds.getX() + whiteKeyBefore * whiteKeyWidth - blackKeyWidth / 2;
             juce::Rectangle<float> keyRect(x, keyboardBounds.getY(), blackKeyWidth, blackKeyHeight);
 
             bool isPressed = processor.isNoteOn(midiNote);
