@@ -315,9 +315,8 @@ cmake ..
 cmake --build . --config Release
 ```
 
-Output plugins are in `build/MidiKeyboardDisplay_artefacts/Release/`:
+Output plugins are in `build/MidiKeyboardDisplay_artefacts/Debug/`:
 - `VST3/MIDI Keyboard Display.vst3`
-- `AU/MIDI Keyboard Display.component`
 - `Standalone/MIDI Keyboard Display.app`
 
 ### Installation
@@ -326,11 +325,7 @@ Copy the built plugin to your system plugin folder:
 
 **macOS:**
 ```bash
-# VST3
-cp -R build/MidiKeyboardDisplay_artefacts/Release/VST3/*.vst3 ~/Library/Audio/Plug-Ins/VST3/
-
-# AU
-cp -R build/MidiKeyboardDisplay_artefacts/Release/AU/*.component ~/Library/Audio/Plug-Ins/Components/
+cp -R build/MidiKeyboardDisplay_artefacts/Debug/VST3/*.vst3 ~/Library/Audio/Plug-Ins/VST3/
 ```
 
 ## Example Sample Library Structure

@@ -11,7 +11,7 @@ juce_add_plugin(MidiKeyboardDisplay
     BUNDLE_ID "com.ALDENHammersmith.MidiKeyboardDisplay"
     PLUGIN_MANUFACTURER_CODE Alde
     PLUGIN_CODE Mkbd
-    FORMATS Standalone VST3 AU
+    FORMATS Standalone VST3
     PRODUCT_NAME "MIDI Keyboard Display"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT TRUE
