@@ -175,15 +175,18 @@ int SamplerEngine::getVelocityLayerIndex(int midiNote, int velocity) const
         return -1;
 
     const auto& actualMapping = actualIt->second;
+    int totalLayers = static_cast<int>(actualMapping.velocityLayers.size());
+    if (totalLayers == 0)
+        return -1;
 
-    for (size_t i = 0; i < actualMapping.velocityLayers.size(); ++i)
-    {
-        const auto& layer = actualMapping.velocityLayers[i];
-        if (velocity >= layer.velocityRangeStart && velocity <= layer.velocityRangeEnd)
-            return static_cast<int>(i);
-    }
+    // Apply velocity layer limit (same logic as findStreamingSample)
+    int effectiveLayers = std::min(velocityLayerLimit, totalLayers);
 
-    return -1;
+    // Map incoming velocity (1-127) to limited layer index evenly
+    int layerIndex = ((velocity - 1) * effectiveLayers) / 127;
+    layerIndex = juce::jlimit(0, effectiveLayers - 1, layerIndex);
+
+    return layerIndex;
 }
 
 int SamplerEngine::parseNoteName(const juce::String& noteName) const
