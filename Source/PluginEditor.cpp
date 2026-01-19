@@ -112,14 +112,6 @@ void NoteGridDisplay::paint(juce::Graphics& g)
                 g.fillRect(box);
                 g.setColour(juce::Colour(0xff222222));
                 g.drawRect(box, 0.5f);
-
-                // Draw RR number (only if layer exists for this note)
-                if (layerExists)
-                {
-                    g.setColour(rrActive ? juce::Colours::white : juce::Colour(0xff666666));
-                    g.setFont(boxHeight * 0.4f);
-                    g.drawText(juce::String(rr), box, juce::Justification::centred);
-                }
             }
         }
 
