@@ -249,6 +249,18 @@ The Velocity Layer Limit and RR Limit controls don't just affect playback - they
 
 **Note:** When you increase limits, samples are loaded from disk on demand. There may be a brief moment before newly-loaded samples are available for playback.
 
+### Slider Debouncing
+
+The **Vel Layers**, **RR Limit**, and **Preload** sliders use a 1-second debounce to prevent UI freezing while adjusting:
+
+**How it works:**
+1. Move the slider freely - no loading happens while you're adjusting
+2. Stop moving the slider
+3. After 1 second of no movement, the change is applied
+4. If you move the slider again before the 1 second is up, the timer resets
+
+This lets you smoothly find the right value without the UI freezing on every slider movement. The RAM display updates after the debounce period completes.
+
 ### Same-Note Release Time (SN Rel)
 
 Controls the release time for existing voices when the same note is retriggered. This is separate from the main ADSR Release control.
