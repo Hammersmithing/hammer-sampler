@@ -519,6 +519,153 @@ No mutexes in the audio path = no priority inversion = no glitches.
 
 ---
 
+## CPU Optimization (Multi-Instance Templates)
+
+The plugin is optimized for running **hundreds of instances** in large DAW templates. Understanding these optimizations helps when debugging performance or extending the plugin.
+
+### The Problem: UI Refresh Rate
+
+A naive JUCE plugin might refresh its UI at 60Hz:
+```cpp
+startTimerHz(60);  // 60 repaints/second
+```
+
+This causes problems at scale:
+
+| Instances | Timer-Based 60Hz | Actual CPU Impact |
+|-----------|------------------|-------------------|
+| 1 | 45% of 1 core | Acceptable |
+| 10 | 450% (4.5 cores) | High |
+| 100 | 4500% (45 cores) | Impossible |
+
+### Solution: Event-Driven + Capped Refresh
+
+The plugin uses a multi-layered optimization strategy:
+
+#### 1. Event-Driven Repainting (Note Grid & Keyboard)
+
+Instead of repainting every frame, only repaint when note state changes:
+
+```cpp
+// Processor increments counter on note on/off
+std::atomic<uint64_t> noteChangeCounter{0};
+
+// In processBlock, on note events:
+++noteChangeCounter;
+
+// Editor checks if anything changed
+void timerCallback() {
+    uint64_t current = processor.getNoteChangeCounter();
+    if (current != lastSeenCounter) {
+        lastSeenCounter = current;
+        repaint();  // Only repaint if notes changed
+    }
+}
+```
+
+**Result:** Idle CPU drops from 45% to ~3% per instance.
+
+#### 2. Refresh Rate Cap (10Hz Max)
+
+Even with many fast notes, the UI caps at 10 repaints/second:
+
+```cpp
+startTimerHz(10);  // Max 10Hz, even during fast passages
+```
+
+This prevents CPU spikes during rapid playing (e.g., fast piano runs).
+
+#### 3. Conditional Status Updates
+
+The status display (voices, throughput, RAM) uses caching to avoid redundant work:
+
+```cpp
+// Only update label if value actually changed
+if (activeVoices != cachedActiveVoices) {
+    voiceActivityLabel.setText(...);
+    cachedActiveVoices = activeVoices;
+}
+```
+
+This prevents string allocations and repaints when values haven't changed.
+
+#### 4. Low-Frequency Status Timer (2Hz)
+
+The status timer runs at 2Hz since voice counts don't need real-time updates:
+
+```cpp
+startTimerHz(2);  // Status updates (voices, throughput)
+```
+
+### CPU Usage Summary
+
+| State | Before Optimization | After Optimization |
+|-------|--------------------|--------------------|
+| Idle (no notes) | 45% of 1 core | 3% of 1 core |
+| Playing | ~45% | ~40% |
+| 100 instances idle | ~4500% (45 cores) | ~300% (3 cores) |
+
+### Understanding Activity Monitor
+
+macOS Activity Monitor shows CPU per-process as **percentage of one core**:
+
+| Metric | What It Measures |
+|--------|------------------|
+| 45% (per-process) | 45% of **one** CPU core |
+| System 2% + User 5% | Percentage of **all** cores combined |
+
+On a 14-core machine:
+- 45% of 1 core = ~3.2% total CPU
+- 300% = ~3 cores worth of work
+
+### Plugin Window Behavior in DAWs
+
+When a plugin window is **closed** in a DAW:
+- The `AudioProcessorEditor` is **destroyed** (not just hidden)
+- All UI timers stop completely
+- CPU usage drops to **near zero** when idle
+
+The `AudioProcessor` continues running for audio, but UI overhead only exists while the window is open. With 100 instances and only 2-3 windows open, you get:
+- Full UI for open windows
+- Zero UI overhead for closed windows
+
+### Memory vs Process Memory
+
+When loading samples, you may notice different memory values:
+
+| Metric | Example | What It Means |
+|--------|---------|---------------|
+| **Size** | 12.46 GB | Total sample files on disk |
+| **RAM** (in plugin) | 74.2 MB | Preload buffers only |
+| **Activity Monitor** | 466 MB | Total process memory |
+
+The difference between "RAM" and Activity Monitor includes:
+- JUCE framework overhead
+- GUI components and rendering buffers
+- Ring buffers for streaming voices
+- Audio format readers and file handles
+- General runtime overhead
+
+The "RAM" display shows only what the sampler allocates for audio data preloading.
+
+### Disk Streaming Observation
+
+You may notice "Disk: 0" even while playing. This is normal:
+
+With a 32KB preload (~93ms of audio at 44.1kHz):
+- Short notes finish before exhausting the preload
+- Staccato playing rarely needs disk streaming
+- The preload covers the critical attack transient
+
+Disk streaming activates when:
+- Notes sustain longer than the preload duration
+- Sustain pedal holds notes
+- Long chords ring out
+
+This is ideal behavior - the preload does its job of providing instant attacks without disk latency.
+
+---
+
 ## Building
 
 Requires JUCE framework installed at `~/JUCE`.
