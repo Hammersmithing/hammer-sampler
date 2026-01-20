@@ -74,6 +74,9 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
                         for (auto& layerArr : noteLayerRRActivated[i])
                             layerArr.fill(false);
                         samplerEngine.noteOff(static_cast<int>(i));
+
+                        // Signal UI to update
+                        ++noteChangeCounter;
                     }
                     // Notes still held (noteSustained == false but noteVelocities > 0)
                     // keep their state - fingers are still on the keys
@@ -120,6 +123,9 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
             // Trigger sample playback
             samplerEngine.noteOn(midiNote, velocity, currentRoundRobin, sampleOffsetAmount);
 
+            // Signal UI to update
+            ++noteChangeCounter;
+
             // Advance round-robin: 1 -> 2 -> ... -> N -> 1 (limited by roundRobinLimit)
             int rrLimit = samplerEngine.getRoundRobinLimit();
             currentRoundRobin = (currentRoundRobin % rrLimit) + 1;
@@ -142,6 +148,9 @@ void MidiKeyboardProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
                 for (auto& layerArr : noteLayerRRActivated[noteIndex])
                     layerArr.fill(false);
                 samplerEngine.noteOff(midiNote);
+
+                // Signal UI to update
+                ++noteChangeCounter;
             }
         }
     }

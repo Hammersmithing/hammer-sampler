@@ -8,12 +8,17 @@
 NoteGridDisplay::NoteGridDisplay(MidiKeyboardProcessor& p)
     : processor(p)
 {
-    startTimerHz(5);
+    startTimerHz(10);  // Max 10Hz refresh rate
 }
 
 void NoteGridDisplay::timerCallback()
 {
-    repaint();
+    uint64_t current = processor.getNoteChangeCounter();
+    if (current != lastSeenCounter)
+    {
+        lastSeenCounter = current;
+        repaint();
+    }
 }
 
 void NoteGridDisplay::paint(juce::Graphics& g)
@@ -134,12 +139,17 @@ void NoteGridDisplay::paint(juce::Graphics& g)
 KeyboardDisplay::KeyboardDisplay(MidiKeyboardProcessor& p)
     : processor(p)
 {
-    startTimerHz(5);
+    startTimerHz(10);  // Max 10Hz refresh rate
 }
 
 void KeyboardDisplay::timerCallback()
 {
-    repaint();
+    uint64_t current = processor.getNoteChangeCounter();
+    if (current != lastSeenCounter)
+    {
+        lastSeenCounter = current;
+        repaint();
+    }
 }
 
 void KeyboardDisplay::drawOctave(juce::Graphics& g, juce::Rectangle<float> bounds, int startNote)
@@ -411,7 +421,7 @@ MidiKeyboardEditor::MidiKeyboardEditor(MidiKeyboardProcessor& p)
     addAndMakeVisible(sameNoteReleaseLabel);
 
     // Start timer for async loading status updates
-    startTimerHz(10);
+    startTimerHz(2);  // Low rate for status updates
 
     setSize(1400, 650);  // Wider for 88 keys, taller for ADSR controls
 }
@@ -476,37 +486,56 @@ void MidiKeyboardEditor::timerCallback()
         }
     }
 
-    // Update voice activity and preload RAM (real-time)
+    // Update voice activity and preload RAM (only when values change)
     if (processorRef.areSamplesLoaded())
     {
         int activeVoices = processorRef.getActiveVoiceCount();
         int streamingVoices = processorRef.getStreamingVoiceCount();
         int underruns = processorRef.getUnderrunCount();
-        voiceActivityLabel.setText("Voices: " + juce::String(activeVoices) + " | Disk: " + juce::String(streamingVoices), juce::dontSendNotification);
-
         float throughput = processorRef.getDiskThroughputMBps();
-        juce::String throughputText = juce::String(throughput, 1) + " MB/s";
-        if (underruns > 0)
-            throughputText += " (" + juce::String(underruns) + " drop)";
-        throughputLabel.setText(throughputText, juce::dontSendNotification);
-
-        // Update preload memory display (changes when limits change)
         int64_t preloadBytes = processorRef.getPreloadMemoryBytes();
-        juce::String preloadStr;
-        if (preloadBytes >= 1024 * 1024 * 1024)
-            preloadStr = juce::String(preloadBytes / (1024.0 * 1024.0 * 1024.0), 2) + " GB";
-        else if (preloadBytes >= 1024 * 1024)
-            preloadStr = juce::String(preloadBytes / (1024.0 * 1024.0), 1) + " MB";
-        else if (preloadBytes >= 1024)
-            preloadStr = juce::String(preloadBytes / 1024.0, 1) + " KB";
-        else
-            preloadStr = juce::String(preloadBytes) + " B";
-        preloadMemLabel.setText("RAM: " + preloadStr, juce::dontSendNotification);
+
+        // Only update labels if values changed
+        if (activeVoices != cachedActiveVoices || streamingVoices != cachedStreamingVoices)
+        {
+            voiceActivityLabel.setText("Voices: " + juce::String(activeVoices) + " | Disk: " + juce::String(streamingVoices), juce::dontSendNotification);
+            cachedActiveVoices = activeVoices;
+            cachedStreamingVoices = streamingVoices;
+        }
+
+        if (throughput != cachedThroughput || underruns != cachedUnderruns)
+        {
+            juce::String throughputText = juce::String(throughput, 1) + " MB/s";
+            if (underruns > 0)
+                throughputText += " (" + juce::String(underruns) + " drop)";
+            throughputLabel.setText(throughputText, juce::dontSendNotification);
+            cachedThroughput = throughput;
+            cachedUnderruns = underruns;
+        }
+
+        if (preloadBytes != cachedPreloadBytes)
+        {
+            juce::String preloadStr;
+            if (preloadBytes >= 1024 * 1024 * 1024)
+                preloadStr = juce::String(preloadBytes / (1024.0 * 1024.0 * 1024.0), 2) + " GB";
+            else if (preloadBytes >= 1024 * 1024)
+                preloadStr = juce::String(preloadBytes / (1024.0 * 1024.0), 1) + " MB";
+            else if (preloadBytes >= 1024)
+                preloadStr = juce::String(preloadBytes / 1024.0, 1) + " KB";
+            else
+                preloadStr = juce::String(preloadBytes) + " B";
+            preloadMemLabel.setText("RAM: " + preloadStr, juce::dontSendNotification);
+            cachedPreloadBytes = preloadBytes;
+        }
     }
-    else
+    else if (cachedActiveVoices != 0)
     {
         voiceActivityLabel.setText("", juce::dontSendNotification);
         throughputLabel.setText("", juce::dontSendNotification);
+        cachedActiveVoices = 0;
+        cachedStreamingVoices = 0;
+        cachedThroughput = -1.0f;
+        cachedUnderruns = -1;
     }
 
     // Apply pending limit/preload changes after debounce period (1 second)

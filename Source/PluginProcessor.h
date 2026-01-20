@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <array>
+#include <atomic>
 #include <vector>
 #include "SamplerEngine.h"
 
@@ -82,6 +83,9 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
+    // Note change counter for event-driven UI updates
+    uint64_t getNoteChangeCounter() const { return noteChangeCounter.load(std::memory_order_relaxed); }
+
     // Check if a note is currently pressed
     bool isNoteOn(int midiNote) const { return noteVelocities[static_cast<size_t>(midiNote)] > 0; }
 
@@ -139,6 +143,8 @@ private:
     int sampleOffsetAmount = 0;   // -12 to +12 semitones (borrow samples, pitch-correct back)
 
     SamplerEngine samplerEngine;
+
+    std::atomic<uint64_t> noteChangeCounter{0};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiKeyboardProcessor)
 };

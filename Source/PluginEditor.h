@@ -11,6 +11,7 @@ public:
 
 private:
     MidiKeyboardProcessor& processor;
+    uint64_t lastSeenCounter = 0;
 
     static constexpr int startNote = 21;  // A0
     static constexpr int endNote = 109;   // C8+1 (exclusive, so 88 notes)
@@ -26,6 +27,7 @@ public:
 
 private:
     MidiKeyboardProcessor& processor;
+    uint64_t lastSeenCounter = 0;
 
     void drawOctave(juce::Graphics& g, juce::Rectangle<float> bounds, int startNote);
 
@@ -108,6 +110,13 @@ private:
     int pendingPreloadSize = -1;    // -1 means no pending change
     juce::int64 lastLimitChangeTime = 0;  // Milliseconds since epoch
     static constexpr int limitDebounceMs = 1000;  // 1 second debounce
+
+    // Cached values to avoid redundant label updates
+    int cachedActiveVoices = -1;
+    int cachedStreamingVoices = -1;
+    int cachedUnderruns = -1;
+    float cachedThroughput = -1.0f;
+    int64_t cachedPreloadBytes = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiKeyboardEditor)
 };
