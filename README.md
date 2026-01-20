@@ -689,6 +689,37 @@ Copy the built plugin to your system plugin folder:
 cp -R build/HammerSampler_artefacts/VST3/*.vst3 ~/Library/Audio/Plug-Ins/VST3/
 ```
 
+### Unit Tests
+
+The project includes unit tests for critical parsing logic using JUCE's UnitTest framework.
+
+**Build and run tests:**
+```bash
+cd build
+cmake --build . --target HammerSamplerTests --config Release
+./HammerSamplerTests_artefacts/HammerSamplerTests
+```
+
+**Test coverage:**
+
+| Test Class | Tests |
+|------------|-------|
+| **Note Name Parsing** | Basic notes, sharps, flats, octaves, boundary notes, case insensitivity, invalid inputs, out-of-range values |
+| **File Name Parsing** | Valid names, suffixes, audio formats, velocity boundaries, round robin boundaries, invalid inputs |
+
+**Example output:**
+```
+Starting tests in: Note Name Parsing / Basic note names...
+Completed tests in Note Name Parsing / Basic note names
+...
+Starting tests in: File Name Parsing / Valid file names...
+Completed tests in File Name Parsing / Valid file names
+...
+All tests passed!
+```
+
+Tests are in a **separate executable** (`HammerSamplerTests`) and do not add any code to the plugin itself.
+
 ## Example Sample Library Structure
 
 ```
