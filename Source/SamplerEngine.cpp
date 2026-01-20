@@ -727,6 +727,36 @@ void SamplerEngine::resetUnderrunCount()
     StreamingVoice::resetUnderrunCount();
 }
 
+void SamplerEngine::reloadPreloadBuffers()
+{
+    std::lock_guard<std::recursive_mutex> lock(mappingsMutex);
+
+    int64_t totalPreloadBytes = 0;
+    int reloadedCount = 0;
+
+    for (auto& ss : streamingSamples)
+    {
+        if (ss.isPreloaded)
+        {
+            // Reload this sample's preload buffer with new size
+            loadSamplePreloadBuffer(ss);
+            reloadedCount++;
+        }
+
+        if (ss.isPreloaded)
+        {
+            totalPreloadBytes += static_cast<int64_t>(ss.preload.preloadBuffer.getNumSamples()) *
+                                 ss.preload.numChannels * sizeof(float);
+        }
+    }
+
+    preloadMemoryBytes = totalPreloadBytes;
+
+    engineDebugLog("reloadPreloadBuffers: preloadSizeKB=" + juce::String(preloadSizeKB) +
+                   " reloaded=" + juce::String(reloadedCount) +
+                   " preloadMem=" + juce::String(totalPreloadBytes / 1024) + " KB");
+}
+
 void SamplerEngine::setVelocityLayerLimit(int limit)
 {
     int newLimit = juce::jlimit(1, juce::jmax(1, maxVelocityLayersGlobal), limit);

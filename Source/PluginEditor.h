@@ -102,5 +102,12 @@ private:
     // Async loading state
     juce::String pendingLoadFolder;
 
+    // Debounce for limit/preload sliders (wait 1 second after last change before applying)
+    int pendingVelLayerLimit = -1;  // -1 means no pending change
+    int pendingRRLimit = -1;        // -1 means no pending change
+    int pendingPreloadSize = -1;    // -1 means no pending change
+    juce::int64 lastLimitChangeTime = 0;  // Milliseconds since epoch
+    static constexpr int limitDebounceMs = 1000;  // 1 second debounce
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiKeyboardEditor)
 };

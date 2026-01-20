@@ -63,6 +63,7 @@ public:
     // Preload size control (in KB, range 32-1024)
     int getPreloadSizeKB() const { return preloadSizeKB; }
     void setPreloadSizeKB(int sizeKB) { preloadSizeKB = juce::jlimit(32, 1024, sizeKB); }
+    void reloadPreloadBuffers();  // Reload all preloaded samples with current preloadSizeKB
 
     // Streaming activity info (for UI)
     int getActiveVoiceCount() const;

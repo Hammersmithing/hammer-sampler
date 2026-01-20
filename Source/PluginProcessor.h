@@ -26,6 +26,7 @@ public:
     // Streaming controls
     int getPreloadSizeKB() const { return samplerEngine.getPreloadSizeKB(); }
     void setPreloadSizeKB(int sizeKB) { samplerEngine.setPreloadSizeKB(sizeKB); }
+    void reloadPreloadBuffers() { samplerEngine.reloadPreloadBuffers(); }
     int getActiveVoiceCount() const { return samplerEngine.getActiveVoiceCount(); }
     int getStreamingVoiceCount() const { return samplerEngine.getStreamingVoiceCount(); }
     float getDiskThroughputMBps() const { return samplerEngine.getDiskThroughputMBps(); }

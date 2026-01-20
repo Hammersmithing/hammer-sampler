@@ -509,6 +509,32 @@ void MidiKeyboardEditor::timerCallback()
         voiceActivityLabel.setText("", juce::dontSendNotification);
         throughputLabel.setText("", juce::dontSendNotification);
     }
+
+    // Apply pending limit/preload changes after debounce period (1 second)
+    if ((pendingVelLayerLimit >= 0 || pendingRRLimit >= 0 || pendingPreloadSize >= 0) &&
+        juce::Time::currentTimeMillis() - lastLimitChangeTime >= limitDebounceMs)
+    {
+        if (pendingPreloadSize >= 0)
+        {
+            processorRef.setPreloadSizeKB(pendingPreloadSize);
+            // Reload preload buffers with new size
+            if (processorRef.areSamplesLoaded())
+            {
+                processorRef.reloadPreloadBuffers();
+            }
+            pendingPreloadSize = -1;
+        }
+        if (pendingVelLayerLimit >= 0)
+        {
+            processorRef.setVelocityLayerLimit(pendingVelLayerLimit);
+            pendingVelLayerLimit = -1;
+        }
+        if (pendingRRLimit >= 0)
+        {
+            processorRef.setRoundRobinLimit(pendingRRLimit);
+            pendingRRLimit = -1;
+        }
+    }
 }
 
 void MidiKeyboardEditor::updateADSR()
@@ -533,12 +559,16 @@ void MidiKeyboardEditor::updateSampleOffset()
 
 void MidiKeyboardEditor::updateVelLayerLimit()
 {
-    processorRef.setVelocityLayerLimit(static_cast<int>(velLayerLimitSlider.getValue()));
+    // Debounce: store pending value, will apply after 1 second of no changes
+    pendingVelLayerLimit = static_cast<int>(velLayerLimitSlider.getValue());
+    lastLimitChangeTime = juce::Time::currentTimeMillis();
 }
 
 void MidiKeyboardEditor::updateRRLimit()
 {
-    processorRef.setRoundRobinLimit(static_cast<int>(rrLimitSlider.getValue()));
+    // Debounce: store pending value, will apply after 1 second of no changes
+    pendingRRLimit = static_cast<int>(rrLimitSlider.getValue());
+    lastLimitChangeTime = juce::Time::currentTimeMillis();
 }
 
 void MidiKeyboardEditor::updateSameNoteRelease()
@@ -548,23 +578,9 @@ void MidiKeyboardEditor::updateSameNoteRelease()
 
 void MidiKeyboardEditor::preloadSliderChanged()
 {
-    processorRef.setPreloadSizeKB(static_cast<int>(preloadSlider.getValue()));
-
-    // Auto-reload samples if samples are loaded
-    if (processorRef.areSamplesLoaded())
-    {
-        juce::String folderPath = processorRef.getLoadedFolderPath();
-        if (folderPath.isNotEmpty())
-        {
-            juce::File folder(folderPath);
-            if (folder.isDirectory())
-            {
-                processorRef.loadSamplesFromFolder(folder);
-                statusLabel.setText("Reloading with " + juce::String(static_cast<int>(preloadSlider.getValue())) + " KB preload...", juce::dontSendNotification);
-                pendingLoadFolder = folder.getFileName();
-            }
-        }
-    }
+    // Debounce: store pending value, will apply after 1 second of no changes
+    pendingPreloadSize = static_cast<int>(preloadSlider.getValue());
+    lastLimitChangeTime = juce::Time::currentTimeMillis();
 }
 
 void MidiKeyboardEditor::loadSamplesClicked()
